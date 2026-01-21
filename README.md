@@ -209,14 +209,28 @@ tritter/
 
 ## Contributing
 
-Tritter follows SOLID principles and composition-based design. Contributions are welcome!
+Contributions are welcome! **Before contributing, please read our development standards:**
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass: `pytest`
-5. Format code: `ruff format .`
-6. Submit a pull request
+📘 **[CONTRIBUTING.md](CONTRIBUTING.md)** - Start here for contribution workflow and process
+
+📐 **[DEVELOPMENT_STANDARDS.md](DEVELOPMENT_STANDARDS.md)** - Mandatory code quality standards
+- Google-style docstrings with "Why" explanations required
+- Embedding-prediction paradigm documentation
+- Testing standards and anti-patterns to avoid
+- Pre-commit checklist
+
+📋 **[API_CONVENTIONS.md](API_CONVENTIONS.md)** - API design patterns and schemas
+- Configuration, model, tokenization interfaces
+- Type annotation requirements
+- Error handling patterns
+
+**Quick Start:**
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and workflow
+2. Review [DEVELOPMENT_STANDARDS.md](DEVELOPMENT_STANDARDS.md) before coding
+3. Follow [API_CONVENTIONS.md](API_CONVENTIONS.md) for new APIs
+4. Ensure all tests pass: `pytest tests/`
+5. Verify code quality: `ruff check src/ tests/ && mypy src/`
+6. Submit PR following the template
 
 ## License
 
