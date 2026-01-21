@@ -46,7 +46,7 @@ inference = [
 ]
 
 training = [
-    "nanotron>=0.1.0",
+    "nanotron>=0.3.0",
 ]
 
 all = [
