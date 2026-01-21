@@ -99,48 +99,64 @@ class TritterConfig:
 
 ### Base Model Interface
 
-**All models MUST implement:**
+**MANDATORY: All models MUST implement embedding prediction natively**
+
+See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) for comprehensive rationale.
 
 ```python
 class TritterModel(nn.Module):
-    """Transformer model with BitNet quantization and multimodal support.
+    """Transformer model with embedding prediction and BitNet quantization.
 
-    Why: [Architecture rationale, embedding-prediction paradigm]
+    CRITICAL: This model predicts next semantic embeddings, NOT next tokens.
+    Token prediction is explicitly REJECTED per ARCHITECTURE_DECISION.md.
+
+    Why: Embedding prediction enables function-level semantic reasoning without
+    discrete token bottleneck. BitNet b1.58 research shows native training with
+    chosen objective beats phasing. Embedding predictor (4K×4K) is 56× smaller
+    than logit projection (4K×65K), saving 0.9GB VRAM.
 
     Attributes:
         config: TritterConfig instance
-        embed: UnifiedEmbedding layer (vocab → hidden_size)
-        layers: ModuleList of TritterLayer instances
+        semantic_encoder: Encodes semantic units (functions/classes) to embeddings
+        layers: ModuleList of TritterLayer instances (BitNet b1.58 quantized)
         norm: Final layer normalization
-        output_projection: Linear(hidden_size → vocab_size)
+        embedding_predictor: Linear(hidden_size → hidden_size) for next embedding
     """
 
     def __init__(self, config: TritterConfig) -> None:
-        """Initialize model from configuration.
+        """Initialize embedding prediction model.
 
         Args:
             config: Model configuration with validated hyperparameters
 
-        Why: [Explain initialization choices, BitNet setup, memory allocation]
+        Why: Initialize with embedding predictor, not output_projection.
+        BitNet quantization applied to semantic_encoder and all layers.
+        Native training from scratch with embedding prediction objective.
         """
 
     def forward(
         self,
-        input_ids: torch.Tensor,
+        semantic_units: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Forward pass through transformer.
+        """Forward pass predicting next semantic embeddings.
 
         Args:
-            input_ids: Token IDs of shape (batch_size, seq_len)
-            attention_mask: Optional mask (batch_size, seq_len, seq_len)
-            position_ids: Optional positions (batch_size, seq_len)
+            semantic_units: Tokenized semantic units (functions/classes)
+                of shape (batch_size, num_units, unit_tokens)
+            attention_mask: Optional mask (batch_size, num_units, num_units)
+            position_ids: Optional positions (batch_size, num_units)
 
         Returns:
-            Logits of shape (batch_size, seq_len, vocab_size)
+            Predicted embeddings of shape (batch_size, num_units-1, hidden_size)
 
-        Why: [Explain embedding-prediction paradigm, why logits are temporary]
+        Why: Predicts embeddings for positions [1:] given input [:-1].
+        This enables next-function/next-class prediction at semantic granularity.
+        Model operates entirely in continuous embedding space. Token conversion
+        happens only at generation boundaries via EmbeddingRounder.
+
+        See ARCHITECTURE_DECISION.md § Core Principle: Semantic Unit Processing
         """
 ```
 
@@ -498,13 +514,39 @@ class Trainer:
         """
 ```
 
-**Key Training Components:**
+**Key Training Components (REQUIRED for Embedding Prediction):**
 
-1. **EmbeddingPredictionLoss**: MSE in embedding space, not cross-entropy
-2. **CurriculumScheduler**: Token prediction → embedding prediction transition
-3. **MultimodalDataLoader**: Balanced sampling across modalities
-4. **BitNetOptimizer**: STE-aware gradient updates
-5. **MemoryOptimizer**: Gradient checkpointing for 16GB VRAM
+1. **EmbeddingPredictionLoss**: Contrastive + MSE in embedding space (NOT cross-entropy)
+   - Combines InfoNCE contrastive loss with MSE reconstruction
+   - Prevents collapse to trivial solutions
+   - See ARCHITECTURE_DECISION.md § Training Objective
+
+2. **SemanticDataLoader**: Yields code as semantic units (functions/classes), not tokens
+   - Pre-tokenizes code into semantic boundaries during data loading
+   - Batches by semantic unit count, not token count
+   - Enables function-level prediction granularity
+
+3. **MultimodalDataLoader**: Balanced sampling across text/code/image/audio
+   - Ensures no modality dominates training
+   - Critical for early fusion multimodal architecture
+
+4. **BitNetOptimizer**: STE-aware gradient updates for ternary quantization
+   - Handles straight-through estimator (STE) gradients
+   - Maintains full-precision shadow weights during training
+   - Quantizes to {-1, 0, +1} for forward pass only
+
+5. **MemoryOptimizer**: Gradient checkpointing + mixed precision for 16GB VRAM
+   - Trade compute for memory (re-compute activations during backward)
+   - Essential for fitting 7B model with 128K context on RTX 5080
+
+**EXPLICITLY REJECTED (per ARCHITECTURE_DECISION.md):**
+
+❌ **CurriculumScheduler for objective phasing**: Token→embedding prediction transitions
+   are NOT used. Model trains with embedding prediction from day 1.
+
+❌ **Cross-entropy loss**: Only used in token-prediction models, which Tritter is NOT.
+
+❌ **Logit projection head**: Tritter uses embedding_predictor, not output_projection.
 
 ---
 

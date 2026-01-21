@@ -28,17 +28,44 @@
 - **Trivial:** Simple getters, obvious property accessors, `__init__` that just assigns parameters
 - **Non-Trivial:** Any logic, transformations, architectural decisions, optimizations, algorithms
 
-### 2. Embedding-First Architecture
+### 2. Embedding-Prediction Architecture (PRIMARY)
 
-**Rule:** All code must acknowledge that Tritter operates in continuous embedding space, not discrete token space.
+**CRITICAL DECISION:** Tritter implements **embedding prediction natively from day 1**, NOT token prediction.
 
-**Key Understanding:**
-- Tokenization is the **entry point** (discrete → continuous)
-- Model operates on **embeddings** (Coconut/LCM style)
-- Model predicts **next embeddings**, not next tokens
-- Token decoding is the **exit point** (continuous → discrete via KNN/VQ)
+See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) for comprehensive rationale.
 
-**Documentation Requirement:** When writing tokenization or model code, explicitly state this paradigm in docstrings.
+**Rule:** All code MUST implement embedding prediction. Token-based approaches are explicitly REJECTED.
+
+**Architecture:**
+- **Semantic tokenization**: Code → functions/classes (not characters/subwords)
+- **Embedding encoder**: Semantic units → continuous embeddings
+- **Embedding prediction**: Predict next semantic unit's embedding
+- **Token conversion**: Only at generation boundaries (KNN/VQ rounding)
+
+**Why No Token Prediction:**
+- BitNet b1.58 research: Native training with chosen objective beats phasing
+- Curriculum learning (ACL 2025): Objective transitions waste compute for 3B+ models
+- Different loss surfaces: Cross-entropy vs contrastive/MSE can't transfer weights
+- Memory efficiency: Embedding predictor (4K×4K) is 56× smaller than logit projection (4K×65K)
+
+**Implementation Requirements:**
+```python
+# ✅ CORRECT: Embedding prediction
+def forward(self, semantic_units):
+    embeddings = self.encoder(semantic_units)
+    hidden_states = self.transformer(embeddings)
+    pred_embeddings = self.predictor(hidden_states[:, :-1])  # [B, L-1, D]
+    return pred_embeddings
+
+# ❌ FORBIDDEN: Token prediction
+def forward(self, token_ids):
+    embeddings = self.embed(token_ids)
+    hidden_states = self.transformer(embeddings)
+    logits = self.output_projection(hidden_states)  # [B, L, V] - DO NOT USE
+    return logits
+```
+
+**Documentation Requirement:** All model code must explicitly state this is embedding prediction, not token prediction. Reference ARCHITECTURE_DECISION.md for design rationale.
 
 ### 3. Memory Constraints are Non-Negotiable
 
@@ -214,38 +241,65 @@ python -c "from tritter.models import *; print('OK')"
 
 ### Embedding-Prediction Architecture
 
-**Rule:** Code operating on embeddings must explicitly acknowledge this paradigm.
+**MANDATORY IMPLEMENTATION:** All model code must implement embedding prediction natively.
+
+See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) for full rationale.
 
 ```python
-# ✅ CORRECT
-def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
-    """Forward pass through transformer.
+# ✅ CORRECT: Native embedding prediction
+def forward(self, semantic_units: torch.Tensor) -> torch.Tensor:
+    """Forward pass predicting next semantic embeddings.
 
     Args:
-        input_ids: Token IDs of shape (batch_size, seq_len)
+        semantic_units: Tokenized semantic units (functions/classes)
+            of shape (batch_size, num_units, unit_tokens)
 
     Returns:
-        Logits of shape (batch_size, seq_len, vocab_size)
+        Predicted embeddings of shape (batch_size, num_units-1, hidden_size)
 
-    Why: Current implementation outputs logits for compatibility with standard
-    language modeling. Production model will output embeddings directly and use
-    KNN/VQ rounding only at generation boundaries. The model operates in continuous
-    embedding space (Coconut/LCM style) - these logits are just a temporary
-    projection for training with cross-entropy loss.
+    Why: Tritter uses embedding prediction natively from day 1 (not phased).
+    Model predicts next function's/class's embedding in continuous space, enabling
+    semantic-level reasoning without discrete token bottleneck. This approach:
+    - Aligns with function-level code understanding goals
+    - Leverages BitNet b1.58 native training (no objective phasing)
+    - Uses 56× smaller output head than token prediction (4K×4K vs 4K×65K)
+    - Enables smooth semantic relationships vs quantized vocabulary
+
+    The model operates entirely in embedding space. Token conversion happens
+    only at generation boundaries via EmbeddingRounder (KNN/VQ).
+
+    See ARCHITECTURE_DECISION.md for research backing this approach.
     """
-    embeddings = self.embed(input_ids)  # Entry: discrete → continuous
-    hidden_states = self.transformer(embeddings)  # Operate in continuous space
-    logits = self.output_projection(hidden_states)  # Temporary discrete projection
-    return logits
+    # Encode semantic units to embeddings (entry: discrete → continuous)
+    embeddings = self.semantic_encoder(semantic_units)  # [B, U, D]
+
+    # Process through transformer (operate in continuous space)
+    hidden_states = self.transformer(embeddings)  # [B, U, D]
+
+    # Predict next embeddings (shift by 1 for next-unit prediction)
+    pred_embeddings = self.embedding_predictor(hidden_states[:, :-1])  # [B, U-1, D]
+
+    return pred_embeddings  # Continuous embeddings, not discrete logits
 
 
-# ❌ INCORRECT: No mention of embedding-prediction paradigm
+# ❌ FORBIDDEN: Token prediction with logits
 def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
-    """Forward pass."""
+    """Forward pass - WRONG ARCHITECTURE!"""
     embeddings = self.embed(input_ids)
     hidden_states = self.transformer(embeddings)
-    logits = self.output_projection(hidden_states)
-    return logits
+    logits = self.output_projection(hidden_states)  # [B, L, vocab_size]
+    return logits  # DO NOT USE - violates embedding-prediction mandate
+```
+
+**Training Loss:**
+
+```python
+# ✅ CORRECT: Embedding prediction loss
+loss_fn = EmbeddingPredictionLoss(temperature=0.07, alpha=0.5)
+loss = loss_fn(pred_embeddings, target_embeddings[:, 1:])
+
+# ❌ FORBIDDEN: Cross-entropy on tokens
+loss = F.cross_entropy(logits.view(-1, vocab_size), targets.view(-1))
 ```
 
 ### Symmetry Requirements
@@ -653,6 +707,13 @@ When adding this to review comments:
 ---
 
 ## Version History
+
+**v1.1 (2026-01-21):** CRITICAL ARCHITECTURAL DECISION
+- **BREAKING CHANGE**: Mandated embedding prediction as PRIMARY architecture
+- Rejected token-prediction→embedding-prediction phasing approach
+- Updated all examples to show native embedding prediction
+- Added references to ARCHITECTURE_DECISION.md for research backing
+- Clarified that token prediction is FORBIDDEN, not temporary
 
 **v1.0 (2026-01-21):**
 - Initial version based on PR#2 review feedback
