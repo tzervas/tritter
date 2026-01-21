@@ -37,4 +37,19 @@ TODO: Implement after validating that:
 3. Continuous-to-discrete mapping strategy is chosen (KNN vs VQ vs LRD)
 """
 
+
+class Trainer:
+    """Stub Trainer class for embedding-prediction transformer training.
+
+    This placeholder exists to satisfy the public API (`__all__ = ["Trainer"]`)
+    until the full training loop is implemented.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        raise NotImplementedError(
+            "Trainer is not yet implemented. See src/tritter/training/__init__.py "
+            "for implementation plan and TODOs."
+        )
+
+
 __all__ = ["Trainer"]

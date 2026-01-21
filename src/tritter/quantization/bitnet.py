@@ -30,6 +30,10 @@ class TernaryWeight(nn.Module):
             in_features: Size of input features
             out_features: Size of output features
             bias: If True, adds a learnable bias
+
+        Why: Full-precision shadow weights (self.weight) are maintained for training via
+        straight-through estimator (STE). Quantization happens in forward pass only.
+        The scale parameter allows per-channel adaptive scaling after quantization.
         """
         super().__init__()
         self.in_features = in_features
@@ -38,7 +42,7 @@ class TernaryWeight(nn.Module):
         # Full-precision weights for training
         self.weight = nn.Parameter(torch.randn(out_features, in_features))
 
-        # Scaling factors for quantization
+        # Scaling factors for quantization (per output channel)
         self.scale = nn.Parameter(torch.ones(out_features, 1))
 
         if bias:
@@ -46,19 +50,30 @@ class TernaryWeight(nn.Module):
         else:
             self.register_parameter("bias", None)
 
+        # Cache for quantized weights during eval mode
+        self.register_buffer("_quantized_weight_cache", None)
+        self._cache_valid = False
+
     def quantize_weights(self, weights: torch.Tensor) -> torch.Tensor:
         """Quantize weights to ternary values {-1, 0, 1}.
 
         Args:
-            weights: Full-precision weight tensor
+            weights: Full-precision weight tensor of shape (out_features, in_features)
 
         Returns:
             Quantized ternary weights
-        """
-        # Compute absolute mean for thresholding
-        alpha = weights.abs().mean()
 
-        # Quantize to {-1, 0, 1}
+        Why: Per-channel quantization (computing alpha per output channel) provides better
+        accuracy than global quantization, especially when weight magnitudes vary significantly
+        across channels. This follows the BitNet b1.58 paper's recommendation for per-row/
+        per-channel scaling. Each output channel gets its own threshold, allowing the model
+        to adapt quantization granularity to each channel's weight distribution.
+        """
+        # Compute absolute mean per output channel (dim=1)
+        # Shape: (out_features, 1) for broadcasting
+        alpha = weights.abs().mean(dim=1, keepdim=True)
+
+        # Quantize to {-1, 0, 1} using per-channel thresholds
         quantized = torch.where(
             weights > alpha,
             torch.ones_like(weights),
@@ -70,15 +85,39 @@ class TernaryWeight(nn.Module):
         """Forward pass with quantized weights.
 
         Args:
-            x: Input tensor of shape (batch_size, in_features)
+            x: Input tensor of shape (batch_size, in_features) or (batch_size, seq_len, in_features)
 
         Returns:
-            Output tensor of shape (batch_size, out_features)
-        """
-        # Quantize weights during forward pass
-        quantized_weight = self.quantize_weights(self.weight)
+            Output tensor of shape (batch_size, out_features) or (batch_size, seq_len, out_features)
 
-        # Apply scaling
+        Why: Implements straight-through estimator (STE) for gradient flow. During forward pass,
+        weights are quantized to {-1, 0, 1}, but gradients flow through as if quantization was
+        identity function. This is achieved by detaching quantized weights and adding back the
+        full-precision weights for autograd. In eval mode, quantized weights are cached to avoid
+        repeated quantization overhead, significantly improving inference speed.
+        """
+        # Use cached quantized weights in eval mode for efficiency
+        if not self.training:
+            if not self._cache_valid or self._quantized_weight_cache is None:
+                with torch.no_grad():
+                    self._quantized_weight_cache = self.quantize_weights(self.weight)
+                    self._cache_valid = True
+            quantized_weight = self._quantized_weight_cache
+        else:
+            # Training mode: quantize on the fly
+            quantized_weight = self.quantize_weights(self.weight)
+            # Invalidate cache if weights change during training
+            self._cache_valid = False
+
+        # Implement straight-through estimator (STE)
+        # Detach quantized weights from computation graph, then add gradient path
+        # through full-precision weights. This allows gradients to flow during backprop
+        # while using quantized weights during forward pass.
+        if self.training:
+            # STE: gradient flows through self.weight, not through quantization
+            quantized_weight = quantized_weight.detach() + self.weight - self.weight.detach()
+
+        # Apply per-channel scaling
         scaled_weight = quantized_weight * self.scale
 
         # Linear transformation
@@ -120,11 +159,21 @@ class BitNetQuantizer:
 
         Returns:
             Model with quantized linear layers
+
+        Why: Converts all nn.Linear layers to TernaryWeight layers for BitNet quantization.
+        Recursively processes all child modules to handle nested architectures. After
+        quantizing a child, continues to the next sibling rather than returning immediately,
+        ensuring all linear layers at all depths are converted.
         """
         for name, module in model.named_children():
             if isinstance(module, nn.Linear):
+                # Replace Linear layer with TernaryWeight
                 setattr(model, name, BitNetQuantizer.quantize_linear(module))
             else:
-                BitNetQuantizer.quantize_model(module)
+                # Recursively quantize children and update if changed
+                quantized_child = BitNetQuantizer.quantize_model(module)
+                if quantized_child is not module:
+                    setattr(model, name, quantized_child)
+                # Continue to next sibling (don't return early)
 
         return model

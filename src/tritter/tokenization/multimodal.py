@@ -147,7 +147,7 @@ class MultiModalTokenizer:
         return tokens
 
     def _encode_text(self, text: str) -> list[int]:
-        """Encode text using byte-pair encoding.
+        """Encode text using byte-level encoding.
 
         Args:
             text: Text string to encode
@@ -161,12 +161,20 @@ class MultiModalTokenizer:
         (shorter sequences = more content in 128K context) while avoiding the out-of-vocabulary
         issues of word-level tokenization. Essential for multilingual support and code tokens.
 
-        TODO: Replace with proper BPE tokenizer (e.g., tiktoken or HuggingFace tokenizers)
-        Current implementation is placeholder using character-level encoding with modulo.
-        This causes token collisions (multiple chars map to same ID) and poor compression,
-        making it unsuitable for production but adequate for architecture testing.
+        TODO: Replace with proper BPE tokenizer (e.g., tiktoken or HuggingFace tokenizers).
+        The current placeholder uses UTF-8 byte-level encoding, which avoids modulo-based
+        token collisions while remaining simple and deterministic, but still lacks the
+        compression and subword semantics of true BPE tokenization.
         """
-        return [ord(c) % self.vocab_size for c in text]
+        # Encode as UTF-8 bytes to avoid collisions from modulo-based encoding.
+        # This requires the unified vocabulary to reserve at least 256 IDs.
+        if self.vocab_size < 256:
+            raise ValueError(
+                f"vocab_size={self.vocab_size} is too small for byte-level text encoding; "
+                "needs at least 256."
+            )
+        # Add offset to avoid collision with special tokens (0-7)
+        return [b + 8 for b in text.encode("utf-8")]
 
     def _encode_code(self, code: str) -> list[int]:
         """Encode source code with AST-aware tokenization.
@@ -264,11 +272,17 @@ class MultiModalTokenizer:
             special_ids = set(self.special_tokens.values())
             token_ids = [t for t in token_ids if t not in special_ids]
 
-        # Convert back to characters (placeholder implementation matching _encode_text)
-        # Why: Match encode's modulo operation by handling full Unicode range up to 0x10FFFF.
-        # This prevents data loss during encode→decode round-trip, though still placeholder.
-        # Production needs proper BPE vocabulary mapping.
-        return "".join(chr(t % 0x110000) for t in token_ids if 0 <= t % 0x110000 <= 0x10FFFF)
+        # Decode UTF-8 bytes (reverse the +8 offset from encode)
+        # Filter out invalid byte values and handle offset
+        try:
+            bytes_list = []
+            for t in token_ids:
+                if t >= 8 and t < 264:  # Valid byte range with offset (0-255 + 8)
+                    bytes_list.append(t - 8)
+            return bytes(bytes_list).decode("utf-8", errors="ignore")
+        except Exception:
+            # Fallback for non-byte tokens
+            return ""
 
 
 class UnifiedEmbedding(nn.Module):

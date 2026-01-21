@@ -79,14 +79,26 @@ class TestMultiModalTokenizer:
         assert tokens[1] == tokenizer.special_tokens[tokenizer.CODE_PREFIX]
 
     def test_encode_without_special_tokens(self) -> None:
-        """Test encoding without special tokens."""
+        """Test encoding without special tokens.
+
+        Why: When add_special_tokens=False, BOS/EOS and modality prefix tokens should not
+        appear anywhere in the sequence. A weak test that only checks tokens[0] could pass
+        by coincidence if the first content token differs from BOS. This robust test verifies
+        that none of the special tokens appear in the output.
+        """
         tokenizer = MultiModalTokenizer()
 
         text = "test"
         tokens = tokenizer.encode(text, ModalityType.TEXT, add_special_tokens=False)
 
-        # Should not have BOS/EOS tokens
-        assert tokens[0] != tokenizer.special_tokens[tokenizer.BOS_TOKEN]
+        # Should not have BOS/EOS tokens anywhere in the sequence
+        bos_id = tokenizer.special_tokens[tokenizer.BOS_TOKEN]
+        eos_id = tokenizer.special_tokens[tokenizer.EOS_TOKEN]
+        text_prefix_id = tokenizer.special_tokens[tokenizer.TEXT_PREFIX]
+        
+        assert bos_id not in tokens, "BOS token should not be present"
+        assert eos_id not in tokens, "EOS token should not be present"
+        assert text_prefix_id not in tokens, "Modality prefix should not be present"
 
     def test_encode_respects_max_length(self) -> None:
         """Test that encoding respects maximum length."""
@@ -142,13 +154,30 @@ class TestUnifiedEmbedding:
         assert output.shape == (batch_size, seq_len, 256)
 
     def test_padding_index(self) -> None:
-        """Test that padding index works correctly."""
+        """Test that padding index prevents gradient updates.
+
+        Why: The padding_idx parameter in nn.Embedding prevents gradient updates to padding
+        embeddings during backpropagation, not initialization to zero. This test verifies
+        that padding gradients are not updated, which is the actual guarantee provided by
+        padding_idx. The embeddings themselves are initialized randomly like other embeddings.
+        """
         embedding = UnifiedEmbedding(vocab_size=100, embedding_dim=64, padding_idx=0)
 
-        # Token IDs with padding
+        # Token IDs with padding (ID 0)
         token_ids = torch.tensor([[1, 2, 3, 0, 0], [4, 5, 0, 0, 0]])
 
         output = embedding(token_ids)
+        
+        # Compute loss and backward pass
+        loss = output.sum()
+        loss.backward()
 
-        # Padding embeddings should be zero
-        assert torch.allclose(output[:, 3:, :], torch.zeros_like(output[:, 3:, :]))
+        # Verify that padding token (index 0) has no gradient
+        # padding_idx prevents gradient updates, not zero initialization
+        assert embedding.embedding.weight.grad is not None
+        padding_grad = embedding.embedding.weight.grad[0]  # Gradient for padding token (index 0)
+        
+        # Padding token gradient should be zero (no updates during backprop)
+        assert torch.allclose(padding_grad, torch.zeros_like(padding_grad)), (
+            "Padding token should not receive gradient updates when padding_idx=0"
+        )

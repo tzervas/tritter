@@ -105,10 +105,16 @@ class TritterConfig:
         # Why: 7B uses wider layers (4096 hidden) and deeper stack (32 layers) vs 3B.
         # This follows proven scaling from Llama-3/Mistral architectures.
         if self.model_size == "7B":
-            self.hidden_size = 4096
-            self.num_layers = 32
-            self.num_heads = 32
-            self.intermediate_size = 16384
+            # Only override if still at default 3B values (preserve user-specified values)
+            if self.hidden_size == 2048:
+                self.hidden_size = 4096
+            if self.num_layers == 24:
+                self.num_layers = 32
+            if self.num_heads == 16:
+                self.num_heads = 32
+            # Only update intermediate_size if it's still at the 4x hidden_size ratio
+            if self.intermediate_size == 8192:  # 4x the 3B hidden_size
+                self.intermediate_size = 16384  # 4x the 7B hidden_size
 
         # Ensure head dimension is valid
         # Why: Multi-head attention splits hidden_size across heads. Non-divisible configs
