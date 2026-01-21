@@ -265,7 +265,10 @@ class MultiModalTokenizer:
             token_ids = [t for t in token_ids if t not in special_ids]
 
         # Convert back to characters (placeholder implementation matching _encode_text)
-        return "".join(chr(t % 128) for t in token_ids if t < 128)
+        # Why: Match encode's modulo operation by handling full Unicode range up to 0x10FFFF.
+        # This prevents data loss during encode→decode round-trip, though still placeholder.
+        # Production needs proper BPE vocabulary mapping.
+        return "".join(chr(t % 0x110000) for t in token_ids if 0 <= t % 0x110000 <= 0x10FFFF)
 
 
 class UnifiedEmbedding(nn.Module):

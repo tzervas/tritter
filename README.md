@@ -65,31 +65,22 @@ pip install -e .
 import torch
 from tritter import TritterConfig, TritterModel
 from tritter.tokenization.multimodal import MultiModalTokenizer, ModalityType
+from tritter.utils.device_utils import get_optimal_device
 
-# Create configuration
-config = TritterConfig(
-    model_size="3B",
-    use_bitnet=True,
-    max_position_embeddings=131072,  # 128K context
-)
+# Create configuration and model
+config = TritterConfig(model_size="3B", use_bitnet=True)
+model = TritterModel(config).to(get_optimal_device())
 
-# Initialize model
-model = TritterModel(config)
-
-# Create tokenizer
+# Tokenize and run inference
 tokenizer = MultiModalTokenizer(vocab_size=config.vocab_size)
+tokens = tokenizer.encode("Hello from Tritter!", ModalityType.TEXT)
+input_ids = torch.tensor([tokens]).to(get_optimal_device())
 
-# Process text
-text = "Hello from Tritter!"
-tokens = tokenizer.encode(text, ModalityType.TEXT)
-input_ids = torch.tensor([tokens])
-
-# Run inference
 with torch.no_grad():
     logits = model(input_ids)
 ```
 
-See `examples/basic_usage.py` for a complete example.
+**For a complete working example with device optimization, parameter tuning, and multimodal demonstration, see [`examples/basic_usage.py`](examples/basic_usage.py).**
 
 ## Architecture
 

@@ -77,7 +77,7 @@ class TestTernaryWeight:
         assert output.shape == (batch_size, 4)
 
     def test_forward_preserves_gradients(self) -> None:
-        """Test that forward pass preserves gradients for training."""
+        """Test that forward pass preserves gradients for training via STE."""
         layer = TernaryWeight(in_features=8, out_features=4)
         x = torch.randn(2, 8, requires_grad=True)
 
@@ -87,6 +87,18 @@ class TestTernaryWeight:
 
         # Check that gradients exist for input (even if quantization affects weight grads)
         assert x.grad is not None
+
+        # Verify gradients have non-zero magnitude (STE allows gradient flow)
+        # Why: STE (straight-through estimator) must pass gradients through quantization
+        # operation. Zero gradients indicate broken STE implementation.
+        assert x.grad.abs().max() > 0, "Input gradients are all zero - STE may be broken"
+        assert layer.weight.grad is not None, "Weight gradients should exist"
+        assert layer.weight.grad.abs().max() > 0, "Weight gradients are all zero - STE broken"
+
+        # Verify gradients are reasonable magnitude (not NaN/Inf)
+        assert torch.isfinite(x.grad).all(), "Input gradients contain NaN/Inf"
+        assert torch.isfinite(layer.weight.grad).all(), "Weight gradients contain NaN/Inf"
+
         # Weights have parameters that can be trained
         assert layer.weight.requires_grad is True
         assert layer.scale.requires_grad is True

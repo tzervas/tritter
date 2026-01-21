@@ -174,7 +174,8 @@ class TestTritterModel:
 
         batch_size = 2
         seq_len = 8
-        input_ids = torch.randint(0, 1000, (batch_size, seq_len))
+        # Use config.vocab_size to ensure test stays valid if vocab_size changes
+        input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len))
 
         logits = model(input_ids)
 
@@ -197,7 +198,7 @@ class TestTritterModel:
         assert logits.shape == (1, 4, 500)
 
     def test_model_parameters_exist(self) -> None:
-        """Test that model has trainable parameters."""
+        """Test that model has trainable parameters within expected bounds."""
         config = TritterConfig(
             hidden_size=64,
             num_heads=2,
@@ -211,3 +212,11 @@ class TestTritterModel:
 
         total_params = sum(p.numel() for p in params)
         assert total_params > 0
+
+        # Verify parameter count is within reasonable bounds for this config
+        # Expected: ~60K params (embedding + 1 layer + output projection)
+        # Lower bound: 50K (catch missing components)
+        # Upper bound: 100K (catch accidental duplication)
+        assert 50_000 < total_params < 100_000, (
+            f"Parameter count {total_params:,} outside expected range for test config"
+        )
