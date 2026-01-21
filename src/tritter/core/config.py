@@ -40,7 +40,7 @@ class TritterConfig:
         vocab_size: Unified vocabulary size for all modalities (default 65536 = 2^16)
         use_bitnet: Enable BitNet 1.58-bit ternary quantization {-1, 0, +1}
         use_flash_attention: Enable FlashAttention2 (reduces O(N²) to O(N) memory)
-        sliding_window_size: Window size for bounded attention (default 4096)
+        sliding_window_size: Window size for sliding window attention (None = disabled, not yet implemented)
         int4_kv_cache: Use INT4 quantization for key-value cache
         modalities: List of enabled modalities from {text, code, image, audio}
         use_early_fusion: Enable Chameleon-style early fusion vs late fusion
@@ -64,7 +64,7 @@ class TritterConfig:
 
     # Attention optimizations
     use_flash_attention: bool = True
-    sliding_window_size: int = 4096
+    sliding_window_size: int | None = None  # TODO: Implement sliding window attention
     use_streaming_llm: bool = True
 
     # Memory optimizations

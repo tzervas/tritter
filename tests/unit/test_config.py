@@ -73,7 +73,7 @@ class TestTritterConfig:
         config = TritterConfig()
 
         assert config.use_flash_attention is True
-        assert config.sliding_window_size == 4096
+        assert config.sliding_window_size is None  # Not yet implemented
         assert config.use_streaming_llm is True
         assert config.int4_kv_cache is True
 

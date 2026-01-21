@@ -15,12 +15,16 @@ from tritter.tokenization.multimodal import UnifiedEmbedding
 
 
 class TritterAttention(nn.Module):
-    """Multi-head attention with QK-Norm, FlashAttention, and sliding window support.
+    """Multi-head attention with QK-Norm, FlashAttention, and optional sliding window support.
 
     Why: Multi-head attention enables the model to attend to different representation subspaces
     simultaneously. QK-Norm (query-key normalization) from Chameleon/BitNet papers provides
     training stability by preventing attention score explosion. FlashAttention reduces memory
     from O(N²) to O(N) and speeds up computation.
+
+    Note: Sliding window attention is configured but not yet implemented. The sliding_window_size
+    parameter is present for future implementation but currently has no effect on attention
+    computation. Full attention is used regardless of this setting.
     """
 
     def __init__(self, config: TritterConfig) -> None:
