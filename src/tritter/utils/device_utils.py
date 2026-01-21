@@ -34,7 +34,7 @@ def get_device_memory_info() -> dict[str, float]:
 def optimize_for_rtx5080() -> None:
     """Configure PyTorch for optimal RTX 5080 performance."""
     if torch.cuda.is_available():
-        # Enable TF32 for better performance on Ampere+ GPUs
+        # Enable TF32 for better performance on Ampere/Ada Lovelace/Blackwell+ GPUs
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 

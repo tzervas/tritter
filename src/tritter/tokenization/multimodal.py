@@ -124,8 +124,9 @@ class MultiModalTokenizer:
         Returns:
             List of token IDs
         """
-        # Simplified: in practice, use a proper BPE tokenizer
-        # For now, use character-level encoding as placeholder
+        # TODO: Replace with proper BPE tokenizer (e.g., tiktoken or HuggingFace tokenizers)
+        # Current implementation is placeholder using character-level encoding
+        # This may cause collisions and poor tokenization quality
         return [ord(c) % self.vocab_size for c in text]
 
     def _encode_code(self, code: str) -> list[int]:
