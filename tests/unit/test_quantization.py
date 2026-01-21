@@ -1,4 +1,24 @@
-"""Unit tests for BitNet quantization."""
+"""Unit tests for BitNet quantization.
+
+Validates BitNet b1.58 ternary quantization: weight quantization and forward pass behavior.
+
+Why: BitNet quantization is the core memory optimization enabling 7B models on 16GB VRAM.
+These tests ensure:
+1. Weights quantize correctly to {-1, 0, +1} using AbsMean scaling
+2. Quantized layers produce valid outputs (no NaN/Inf from numerical issues)
+3. Forward pass works with both quantized computation and full-precision shadow weights
+4. BitNetQuantizer utility can convert standard nn.Linear layers to TernaryWeight
+5. Bias terms remain full-precision (not quantized)
+
+Testing strategy: Uses small test matrices with known patterns to verify quantization
+thresholds and value mappings. Critical validation: quantized weights must be exactly
+{-1, 0, 1} - no other values allowed. Forward pass must produce finite outputs even
+with extreme quantization, ensuring training stability.
+
+Implementation note: Current implementation maintains full-precision shadow weights for
+training via straight-through estimator (STE). Tests validate both quantized forward
+computation and gradient flow through quantization.
+"""
 
 import torch
 

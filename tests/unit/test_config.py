@@ -1,4 +1,18 @@
-"""Unit tests for configuration module."""
+"""Unit tests for configuration module.
+
+Validates TritterConfig dataclass behavior, default values, and constraint checking.
+
+Why: Configuration is the foundation of model architecture - incorrect config leads to
+runtime errors or suboptimal performance. These tests ensure:
+1. Default 3B/7B configs match project-plan.md specifications
+2. Hardware constraints (16GB VRAM) are respected
+3. BitNet quantization defaults are correct
+4. Multimodal settings enable proper early fusion
+5. Invalid configurations fail fast with clear errors
+
+Testing strategy: Validates both happy paths (correct configs) and error paths (invalid
+combinations like hidden_size not divisible by num_heads), ensuring fail-fast behavior.
+"""
 
 import pytest
 

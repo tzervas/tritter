@@ -1,4 +1,23 @@
-"""Unit tests for model architecture."""
+"""Unit tests for model architecture.
+
+Validates transformer components: attention, MLP, layers, and full model integration.
+
+Why: The model architecture is complex with multiple interacting components. These tests ensure:
+1. Each component (attention, MLP, layer) initializes with correct dimensions
+2. Forward passes produce expected output shapes
+3. BitNet quantization integrates correctly when enabled
+4. Residual connections preserve gradient flow
+5. Full model composes all layers without shape mismatches
+
+Testing strategy: Bottom-up validation from smallest components (attention, MLP) to composed
+structures (layer, full model). Tests use reduced dimensions for speed while maintaining
+architectural patterns. Critical assertion: output shapes must match input shapes for residual
+connections to work, enabling deep networks (24-32 layers).
+
+Note: These tests validate the current token-based architecture. Future tests should validate
+embedding prediction (Coconut-style) where model outputs embeddings fed back as inputs rather
+than discrete logits for token prediction.
+"""
 
 import torch
 

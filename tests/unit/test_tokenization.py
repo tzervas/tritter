@@ -1,4 +1,25 @@
-"""Unit tests for multimodal tokenization."""
+"""Unit tests for multimodal tokenization.
+
+Validates multimodal tokenizer and unified embedding layer for early fusion architecture.
+
+Why: Tokenization is the entry point that converts multimodal content into discrete IDs
+before embedding into continuous space where the model operates. These tests ensure:
+1. All four modalities (text, code, image, audio) tokenize without errors
+2. Special tokens (BOS, EOS, modality prefixes) are correctly inserted
+3. UnifiedEmbedding maps tokens from all modalities to shared vector space
+4. Padding tokens use index 0 and don't update during backprop
+5. Max length truncation prevents memory overflow
+
+Testing strategy: Validates the tokenization → embedding pipeline that feeds the model.
+Tests cover happy paths (valid inputs) and edge cases (empty strings, max length, padding).
+Critical validations: (1) modality prefix tokens enable model to condition on input type,
+(2) unified embedding dimension matches model hidden_size for seamless integration.
+
+Architectural context: Tokenization is temporary - it converts inputs to discrete IDs that
+get embedded. The model operates in continuous embedding space and predicts next embeddings
+(Coconut/LCM style), not next tokens. Tokens are only used at input (via tokenizer) and
+output (via KNN/VQ rounding of predicted embeddings back to vocabulary).
+"""
 
 import torch
 
