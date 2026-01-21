@@ -161,19 +161,16 @@ class BitNetQuantizer:
             Model with quantized linear layers
 
         Why: Converts all nn.Linear layers to TernaryWeight layers for BitNet quantization.
-        Recursively processes all child modules to handle nested architectures. After
-        quantizing a child, continues to the next sibling rather than returning immediately,
-        ensuring all linear layers at all depths are converted.
+        Recursively processes all child modules to handle nested architectures. The function
+        modifies the model in-place and returns it. Since modifications are in-place, we
+        don't need to check if the returned object differs from the input.
         """
         for name, module in model.named_children():
             if isinstance(module, nn.Linear):
                 # Replace Linear layer with TernaryWeight
                 setattr(model, name, BitNetQuantizer.quantize_linear(module))
             else:
-                # Recursively quantize children and update if changed
-                quantized_child = BitNetQuantizer.quantize_model(module)
-                if quantized_child is not module:
-                    setattr(model, name, quantized_child)
-                # Continue to next sibling (don't return early)
+                # Recursively quantize children (modifies in-place)
+                BitNetQuantizer.quantize_model(module)
 
         return model

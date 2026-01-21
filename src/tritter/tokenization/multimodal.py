@@ -167,13 +167,14 @@ class MultiModalTokenizer:
         compression and subword semantics of true BPE tokenization.
         """
         # Encode as UTF-8 bytes to avoid collisions from modulo-based encoding.
-        # This requires the unified vocabulary to reserve at least 256 IDs.
-        if self.vocab_size < 256:
+        # This requires the unified vocabulary to reserve at least 264 IDs (8 special + 256 bytes).
+        if self.vocab_size < 264:
             raise ValueError(
                 f"vocab_size={self.vocab_size} is too small for byte-level text encoding; "
-                "needs at least 256."
+                "needs at least 264 (8 special tokens + 256 byte values)."
             )
         # Add offset to avoid collision with special tokens (0-7)
+        # Resulting token IDs will be in range [8, 263]
         return [b + 8 for b in text.encode("utf-8")]
 
     def _encode_code(self, code: str) -> list[int]:
