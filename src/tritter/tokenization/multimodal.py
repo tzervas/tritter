@@ -275,10 +275,11 @@ class MultiModalTokenizer:
 
         # Decode UTF-8 bytes (reverse the +8 offset from encode)
         # Filter out invalid byte values and handle offset
+        # Valid range: [8, 263] (8 special tokens + 256 byte values)
         try:
             bytes_list = []
             for t in token_ids:
-                if t >= 8 and t < 264:  # Valid byte range with offset (0-255 + 8)
+                if 8 <= t <= 263:  # Valid byte range with offset
                     bytes_list.append(t - 8)
             return bytes(bytes_list).decode("utf-8", errors="ignore")
         except Exception:

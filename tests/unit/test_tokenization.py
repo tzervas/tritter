@@ -91,14 +91,15 @@ class TestMultiModalTokenizer:
         text = "test"
         tokens = tokenizer.encode(text, ModalityType.TEXT, add_special_tokens=False)
 
-        # Should not have BOS/EOS tokens anywhere in the sequence
-        bos_id = tokenizer.special_tokens[tokenizer.BOS_TOKEN]
-        eos_id = tokenizer.special_tokens[tokenizer.EOS_TOKEN]
-        text_prefix_id = tokenizer.special_tokens[tokenizer.TEXT_PREFIX]
+        # Should not have BOS/EOS/prefix tokens anywhere in the sequence
+        special_ids_to_check = {
+            tokenizer.special_tokens[tokenizer.BOS_TOKEN],
+            tokenizer.special_tokens[tokenizer.EOS_TOKEN],
+            tokenizer.special_tokens[tokenizer.TEXT_PREFIX],
+        }
         
-        assert bos_id not in tokens, "BOS token should not be present"
-        assert eos_id not in tokens, "EOS token should not be present"
-        assert text_prefix_id not in tokens, "Modality prefix should not be present"
+        for special_id in special_ids_to_check:
+            assert special_id not in tokens, f"Special token {special_id} should not be present"
 
     def test_encode_respects_max_length(self) -> None:
         """Test that encoding respects maximum length."""
