@@ -138,7 +138,7 @@ class TritterAttention(nn.Module):
                 )
                 causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # (1, 1, seq_len, seq_len)
 
-                # Combine masks: both must allow attention (max takes the more restrictive)
+                # Combine masks: addition of -inf masks takes the more restrictive constraint
                 combined_mask = attention_mask + causal_mask
 
                 attn_output = torch.nn.functional.scaled_dot_product_attention(
