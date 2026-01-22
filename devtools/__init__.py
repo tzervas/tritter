@@ -13,6 +13,7 @@ Why:
 Components:
     - validate: Run validation suite (format, lint, type check, tests)
     - project_info: Analyze project structure and implementation status
+    - import_validator: Verify __all__ exports match imports
     - agents: Multi-agent orchestration for Claude Code task routing
     - cli: Command-line interface for development tasks
 
@@ -23,11 +24,15 @@ Usage:
     # Get project status
     python -m devtools.project_info
 
+    # Validate imports
+    python -m devtools.import_validator
+
     # CLI interface
     python -m devtools --help
 """
 
 from devtools.agents import ModelRouter, TaskComplexity, TaskSpec
+from devtools.import_validator import ImportValidator, validate_imports
 from devtools.project_info import ProjectAnalyzer, get_project_status
 from devtools.validate import ValidationRunner, run_validation
 
@@ -36,6 +41,8 @@ __all__ = [
     "run_validation",
     "ProjectAnalyzer",
     "get_project_status",
+    "ImportValidator",
+    "validate_imports",
     "ModelRouter",
     "TaskComplexity",
     "TaskSpec",
