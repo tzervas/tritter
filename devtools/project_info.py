@@ -231,7 +231,9 @@ class ProjectAnalyzer:
         except SyntaxError:
             # Intentionally silent: gracefully handle modules with syntax errors
             # during project analysis. These are reported elsewhere (e.g., linting).
-            pass
+            # If the module contains syntax errors (e.g., is partially written),
+            # treat it as having no discoverable structure rather than failing analysis.
+            return classes, functions, docstring
 
         return classes, functions, docstring
 
