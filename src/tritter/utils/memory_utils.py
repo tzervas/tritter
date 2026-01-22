@@ -11,5 +11,5 @@ Why: Critical for managing 16GB VRAM budget on RTX 5080 with 128K context.
 Target implementation: Phase 2 (post-MVP)
 """
 
-# Placeholder for future implementation
-__all__ = []
+# TODO: Add implementations here as they're developed
+__all__ = ["device_utils", "memory_utils"]
