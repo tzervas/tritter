@@ -54,14 +54,87 @@ TODO: Implement after:
 3. Choose primary deployment target (vLLM vs TensorRT vs custom)
 """
 
-__all__ = ["InferenceEngine"]
+class KVCacheManager:
+    """Stub KV-cache manager for INT4 quantized key-value storage.
+
+    Why:
+        128K context with FP16 KV-cache would require ~256GB for 7B model.
+        INT4 quantization reduces this to ~16GB, enabling 128K on RTX 5080.
+        PagedAttention (vLLM-style) enables non-contiguous memory allocation
+        for efficient batch scheduling.
+
+    Key design decisions:
+        - Per-channel quantization for keys (preserves attention patterns)
+        - Per-token quantization for values (better reconstruction)
+        - Page size: 16 tokens (balances fragmentation vs overhead)
+        - Sliding window eviction for StreamingLLM compatibility
+
+    Memory calculation (7B, 128K context):
+        KV-cache = 2 * layers * heads * head_dim * seq_len * bytes_per_element
+        FP16: 2 * 32 * 32 * 128 * 131072 * 2 = 67 GB (impossible on 16GB)
+        INT4: 2 * 32 * 32 * 128 * 131072 * 0.5 = 8.4 GB (fits!)
+
+    Reference: KIVI paper, vLLM PagedAttention
+    """
+
+    def __init__(self) -> None:
+        raise NotImplementedError(
+            "KVCacheManager is not yet implemented. "
+            "See module docstring for memory calculations."
+        )
+
+
+class EmbeddingRounder:
+    """Stub embedding→token rounding for inference output.
+
+    Why:
+        Embedding prediction produces continuous vectors that must be converted
+        to discrete tokens for text output. This conversion is the "exit point"
+        from continuous to discrete space (matching the "entry point" in tokenization).
+
+    Rounding strategies (planned):
+        1. KNN lookup: Find nearest embedding in vocabulary (simple, fast)
+        2. VQ codebook: Use trained vector quantizer (better quality, slower)
+        3. Latent Refinement Decoding: Two-phase progressive hardening (best, slowest)
+
+    Performance targets:
+        - KNN: <1ms per token (triton kernel with precomputed index)
+        - VQ: <5ms per token (hierarchical codebook lookup)
+        - LRD: <50ms per token (iterative refinement)
+
+    Reference: LCM paper §5 "Decoding from Embedding Space"
+    """
+
+    def __init__(self) -> None:
+        raise NotImplementedError(
+            "EmbeddingRounder is not yet implemented. "
+            "See module docstring for rounding strategies."
+        )
 
 
 class InferenceEngine:
     """Stub inference engine for RTX 5080 deployment.
 
-    This placeholder exists so that ``from tritter.inference import InferenceEngine``
-    succeeds while the real implementation is being developed.
+    This placeholder documents the planned interface for generation.
+    Implementation depends on trained model weights and profiling data.
+
+    Planned interface:
+        engine = InferenceEngine(
+            model=model,
+            kv_cache=KVCacheManager(config),
+            rounder=EmbeddingRounder(strategy="knn"),
+        )
+        tokens = engine.generate(
+            prompt_ids=input_ids,
+            max_new_tokens=100,
+            temperature=0.7,
+        )
+
+    Key methods (planned):
+        generate(): Autoregressive generation with embedding prediction
+        embed(): Get embeddings for input (for similarity search)
+        batch_generate(): Throughput-optimized batch generation
+        stream_generate(): Streaming generation with token callbacks
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -69,3 +142,6 @@ class InferenceEngine:
             "InferenceEngine is not implemented yet. "
             "This is a stub placeholder; see the module docstring for details."
         )
+
+
+__all__ = ["InferenceEngine", "KVCacheManager", "EmbeddingRounder"]

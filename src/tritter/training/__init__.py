@@ -38,11 +38,80 @@ TODO: Implement after validating that:
 """
 
 
+class EmbeddingPredictionLoss:
+    """Stub loss function for embedding-prediction training.
+
+    Why:
+        Standard cross-entropy loss operates on discrete token distributions.
+        Embedding prediction requires a loss function that:
+        1. Measures distance in continuous embedding space (MSE, cosine similarity)
+        2. Optionally adds token prediction as auxiliary loss for training stability
+        3. Supports curriculum learning (gradual transition token→embedding)
+
+    Planned loss formulation:
+        L_total = α * L_embedding + (1-α) * L_token
+        where:
+        - L_embedding: MSE or cosine distance between predicted and target embeddings
+        - L_token: Cross-entropy on output logits (temporary, for training stability)
+        - α: Curriculum weight, starts at 0 (token mode), increases to 1 (embedding mode)
+
+    Reference: Coconut paper §3.2, LCM paper §4
+    """
+
+    def __init__(self) -> None:
+        raise NotImplementedError(
+            "EmbeddingPredictionLoss is not yet implemented. "
+            "See module docstring for planned design."
+        )
+
+
+class CurriculumScheduler:
+    """Stub curriculum scheduler for embedding prediction training.
+
+    Why:
+        Training embedding prediction from scratch often collapses (embeddings
+        converge to same point). Curriculum learning starts with standard token
+        prediction and gradually introduces embedding prediction, allowing the
+        model to develop structured embedding space before relying on it.
+
+    Planned curriculum stages:
+        Stage 1 (0-20% training): Pure token prediction (α=0)
+        Stage 2 (20-50% training): Mixed mode, linearly increase α to 0.5
+        Stage 3 (50-80% training): Embedding dominant, increase α to 0.9
+        Stage 4 (80-100% training): Pure embedding (α=1) with token auxiliary
+
+    Reference: Coconut paper §4.1 "Curriculum Training"
+    """
+
+    def __init__(self) -> None:
+        raise NotImplementedError(
+            "CurriculumScheduler is not yet implemented. "
+            "See module docstring for planned design."
+        )
+
+
 class Trainer:
     """Stub Trainer class for embedding-prediction transformer training.
 
-    This placeholder exists to satisfy the public API (`__all__ = ["Trainer"]`)
-    until the full training loop is implemented.
+    This placeholder documents the planned interface. Implementation depends on:
+    1. Stable model architecture (TritterModel with embedding output option)
+    2. Validated quantization (BitNet STE gradient flow confirmed)
+    3. Chosen training framework (Nanotron for distributed, or custom)
+
+    Planned interface:
+        trainer = Trainer(
+            model=model,
+            config=TrainingConfig(...),
+            loss_fn=EmbeddingPredictionLoss(),
+            curriculum=CurriculumScheduler(),
+        )
+        trainer.train(train_dataloader, eval_dataloader)
+
+    Key methods (planned):
+        train(): Main training loop with checkpoint saving
+        evaluate(): Run evaluation with embedding and token metrics
+        save_checkpoint(): Save model + optimizer + curriculum state
+        load_checkpoint(): Resume training from checkpoint
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -52,4 +121,4 @@ class Trainer:
         )
 
 
-__all__ = ["Trainer"]
+__all__ = ["Trainer", "EmbeddingPredictionLoss", "CurriculumScheduler"]
