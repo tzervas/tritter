@@ -83,7 +83,9 @@ class TritterAttention(nn.Module):
         Why: Causal masking is essential for autoregressive (left-to-right) generation to
         prevent the model from attending to future tokens. Without it, the model would "cheat"
         during training by looking ahead. FlashAttention integration provides O(N) memory
-        complexity instead of O(N²), critical for 128K context. QK-Norm prevents attention
+        complexity instead of O(N²), critical for 128K context. When FlashAttention is enabled
+        and no external mask is provided, we use is_causal=True which triggers the optimized
+        causal kernel instead of manually creating an O(N²) mask. QK-Norm prevents attention
         score explosion with long sequences and ternary quantization.
         """
         batch_size, seq_len, _ = hidden_states.shape
@@ -109,30 +111,33 @@ class TritterAttention(nn.Module):
         key = key.transpose(1, 2)
         value = value.transpose(1, 2)
 
-        # Create causal mask if not provided (for autoregressive generation)
-        if attention_mask is None:
-            # Causal mask: lower triangular matrix (can attend to past, not future)
-            # Shape: (1, 1, seq_len, seq_len) for broadcasting
-            causal_mask = torch.triu(
-                torch.full((seq_len, seq_len), float("-inf"), device=hidden_states.device),
-                diagonal=1,
-            )
-            attention_mask = causal_mask.unsqueeze(0).unsqueeze(0)
-
         # Use FlashAttention if enabled (significantly faster and more memory efficient)
         if getattr(self.config, "use_flash_attention", False):
             # PyTorch's scaled_dot_product_attention uses FlashAttention when available
-            # Handles causal masking, scaling, and softmax internally
+            # Optimization: When attention_mask is None, use is_causal=True with attn_mask=None
+            # This allows FlashAttention-2 to use its optimized causal kernel (O(N) memory vs O(N²))
+            # instead of manually creating an O(N²) mask. When attention_mask is provided,
+            # we use is_causal=False with the provided mask.
             attn_output = torch.nn.functional.scaled_dot_product_attention(
                 query,
                 key,
                 value,
                 attn_mask=attention_mask,
                 dropout_p=0.0,
-                is_causal=False,  # We provide mask explicitly
+                is_causal=(attention_mask is None),
             )
         else:
             # Fallback: Standard scaled dot-product attention
+            # Create causal mask if not provided (for autoregressive generation)
+            if attention_mask is None:
+                # Causal mask: lower triangular matrix (can attend to past, not future)
+                # Shape: (1, 1, seq_len, seq_len) for broadcasting
+                causal_mask = torch.triu(
+                    torch.full((seq_len, seq_len), float("-inf"), device=hidden_states.device),
+                    diagonal=1,
+                )
+                attention_mask = causal_mask.unsqueeze(0).unsqueeze(0)
+
             scores = torch.matmul(query, key.transpose(-2, -1)) / (self.head_dim**0.5)
 
             if attention_mask is not None:
