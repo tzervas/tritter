@@ -282,8 +282,8 @@ class MultiModalTokenizer:
                 if 8 <= t <= 263:  # Valid byte range with offset
                     bytes_list.append(t - 8)
             return bytes(bytes_list).decode("utf-8", errors="ignore")
-        except Exception:
-            # Fallback for non-byte tokens
+        except (ValueError, UnicodeDecodeError):
+            # Fallback for unexpected decoding issues (e.g., invalid byte values)
             return ""
 
 
