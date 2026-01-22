@@ -515,7 +515,11 @@ pytest -m gpu
 # .github/workflows/tests.yml
 name: Tests
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
 
 jobs:
   smoke:
@@ -541,12 +545,41 @@ jobs:
 
   integration:
     needs: unit
-    runs-on: [self-hosted, gpu]  # GPU runner
+    # Security: Only run on trusted branches to prevent arbitrary code execution
+    # on self-hosted runners. External PRs must be manually approved and merged
+    # to a trusted branch before integration tests run.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: [self-hosted, gpu]
     steps:
       - uses: actions/checkout@v4
       - run: pip install -e ".[dev]"
       - run: pytest tests/integration/ -v -m gpu
 ```
+
+### 7.2 Self-Hosted Runner Security
+
+**⚠️ Security Considerations for Self-Hosted Runners:**
+
+1. **Restrict to trusted branches**: Integration tests run only on `push` events to `main` or `develop` branches, never on `pull_request` events from untrusted forks.
+
+2. **Manual review process**: External contributions must be:
+   - Code reviewed by maintainers
+   - Manually merged to a protected branch
+   - Only then will integration tests execute
+
+3. **Runner hardening requirements**:
+   - No long-lived secrets stored on runner host
+   - Network isolation from internal resources
+   - Dedicated runner for Tritter project (not shared)
+   - Regular security updates and monitoring
+
+4. **Alternative for external contributors**: Maintainers can manually trigger integration tests after code review using repository dispatch or workflow_dispatch events.
+
+**Rationale**: Self-hosted runners with access to GPU hardware and potentially internal networks must never execute arbitrary code from untrusted PRs. This is a critical security boundary that prevents:
+- Secret exfiltration from runner environment
+- Lateral movement into internal network
+- Cryptocurrency mining or resource abuse
+- Supply chain attacks via malicious dependencies
 
 ---
 
