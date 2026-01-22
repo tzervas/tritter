@@ -64,8 +64,67 @@ class TritterConfig:
 
     # Attention optimizations
     use_flash_attention: bool = True
-    sliding_window_size: int | None = None  # TODO: Implement sliding window attention
     use_streaming_llm: bool = True
+
+    # Attention architecture configuration
+    attention_mode: str = "causal"
+    """Attention mode for transformer computation.
+
+    Why: Different attention patterns enable different use cases. Causal (autoregressive) is
+    standard for language modeling and decoder-only pretraining. Bidirectional enables
+    semantic embeddings. Prefix-LM (bidirectional prefix + causal suffix) enables instruction
+    tuning with context. Embedding mode (from roadmap) enables Coconut-style continuous
+    latent reasoning.
+
+    Options:
+        - "causal": Standard autoregressive decoder-only (default, for pretraining/generation)
+        - "bidirectional": Full attention all tokens attend to all tokens (for embeddings)
+        - "prefix_lm": Bidirectional prefix (instructions) + causal suffix (response)
+        - "embedding": Coconut-style continuous latent reasoning in embedding space
+    """
+
+    use_sliding_window: bool = False
+    """Enable sliding window attention with bounded KV-cache.
+
+    Why: Sliding window attention bounds the context each token attends to (e.g., 4K tokens),
+    reducing KV-cache from O(N²) to O(N*W) where W=window_size. This enables 128K context
+    windows within 16GB VRAM while maintaining local dependencies. Global attention can be
+    implemented via DistilBERT-style attention sinks (see num_sink_tokens).
+
+    Note: Not yet implemented, placeholder for future FlexAttention patterns.
+    """
+
+    sliding_window_size: int | None = None
+    """Size of attention window for sliding window attention.
+
+    Why: Controls the recency window for attention computation. Typical values: 2K-4K tokens
+    balance compute efficiency with dependency modeling. Smaller windows (2K) are faster but
+    may lose long-range dependencies. Larger windows (8K) preserve more context but increase
+    memory. Recommended for 128K context: 4K window (good compromise).
+
+    Default: None (disabled)
+
+    Note: Configured but not yet implemented in attention layers. Must be > 0 if use_sliding_window=True.
+    """
+
+    use_attention_sinks: bool = False
+    """Enable attention sinks for StreamingLLM-style inference.
+
+    Why: StreamingLLM maintains num_sink_tokens as "attention sinks" - special tokens that all
+    future tokens attend to regardless of position. This preserves important early context
+    (e.g., system prompt) even when KV-cache is evicted. Enables infinite-length generation
+    bounded by window size instead of fixed context length.
+
+    Note: Not yet implemented, placeholder for StreamingLLM patterns.
+    """
+
+    num_sink_tokens: int = 4
+    """Number of initial tokens to retain as attention sinks in StreamingLLM.
+
+    Why: Attention sinks typically include the BOS token and first few prompt tokens.
+    4 tokens balances information retention (usually enough for system prompt start) with
+    memory efficiency. Original StreamingLLM paper tested values 2-8 and found 4-8 optimal.
+    """
 
     # Memory optimizations
     int4_kv_cache: bool = True
@@ -130,6 +189,20 @@ class TritterConfig:
         for modality in self.modalities:
             assert modality in valid_modalities, (
                 f"Invalid modality: {modality}. Must be one of {valid_modalities}"
+            )
+
+        # Validate attention configuration
+        # Why: attention_mode must be one of the supported patterns to avoid architecture
+        # mismatches. sliding_window_size must be positive if enabled to prevent zero-size
+        # windows that would make attention degenerate.
+        valid_attention_modes = {"causal", "bidirectional", "prefix_lm", "embedding"}
+        assert self.attention_mode in valid_attention_modes, (
+            f"Invalid attention_mode: {self.attention_mode!r}. Must be one of {valid_attention_modes}"
+        )
+
+        if self.use_sliding_window:
+            assert self.sliding_window_size is not None and self.sliding_window_size > 0, (
+                f"sliding_window_size must be > 0 when use_sliding_window=True, got {self.sliding_window_size}"
             )
 
     @property

@@ -95,3 +95,111 @@ class TestTritterConfig:
         assert "text" in config.modalities
         assert "code" in config.modalities
         assert "image" not in config.modalities
+
+    def test_attention_mode_defaults(self) -> None:
+        """Test default attention mode configuration.
+
+        Validates that attention_mode defaults to "causal" for standard autoregressive
+        pretraining and generation use cases.
+        """
+        config = TritterConfig()
+
+        assert config.attention_mode == "causal"
+        assert config.use_sliding_window is False
+        assert config.sliding_window_size is None
+        assert config.use_attention_sinks is False
+        assert config.num_sink_tokens == 4
+
+    def test_attention_mode_bidirectional(self) -> None:
+        """Test bidirectional attention mode configuration.
+
+        Validates that bidirectional mode can be set for semantic embedding extraction
+        where all tokens attend to all other tokens.
+        """
+        config = TritterConfig(attention_mode="bidirectional")
+
+        assert config.attention_mode == "bidirectional"
+
+    def test_attention_mode_prefix_lm(self) -> None:
+        """Test prefix-LM attention mode configuration.
+
+        Validates that prefix-LM mode can be configured for instruction tuning where
+        the prefix (instructions) uses bidirectional attention and response uses causal.
+        """
+        config = TritterConfig(attention_mode="prefix_lm")
+
+        assert config.attention_mode == "prefix_lm"
+
+    def test_attention_mode_embedding(self) -> None:
+        """Test embedding attention mode configuration.
+
+        Validates that embedding mode (Coconut-style continuous reasoning) can be set
+        for latent refinement in continuous embedding space.
+        """
+        config = TritterConfig(attention_mode="embedding")
+
+        assert config.attention_mode == "embedding"
+
+    def test_invalid_attention_mode_raises_error(self) -> None:
+        """Test that invalid attention mode raises assertion error.
+
+        Validates fail-fast behavior for unsupported attention patterns to catch
+        configuration errors at init time.
+        """
+        with pytest.raises(AssertionError):
+            TritterConfig(attention_mode="invalid_mode")
+
+    def test_sliding_window_configuration(self) -> None:
+        """Test sliding window attention configuration.
+
+        Validates that sliding window parameters can be configured together.
+        Sliding window bounds KV-cache to window_size tokens, reducing memory
+        from O(N²) to O(N*W).
+        """
+        config = TritterConfig(
+            use_sliding_window=True,
+            sliding_window_size=4096,
+        )
+
+        assert config.use_sliding_window is True
+        assert config.sliding_window_size == 4096
+
+    def test_sliding_window_requires_positive_size(self) -> None:
+        """Test that sliding window requires positive size.
+
+        Validates that enabling use_sliding_window=True without a valid window_size
+        fails with assertion error. Zero or None window sizes would degenerate attention.
+        """
+        with pytest.raises(AssertionError):
+            TritterConfig(use_sliding_window=True, sliding_window_size=None)
+
+        with pytest.raises(AssertionError):
+            TritterConfig(use_sliding_window=True, sliding_window_size=0)
+
+        with pytest.raises(AssertionError):
+            TritterConfig(use_sliding_window=True, sliding_window_size=-1)
+
+    def test_attention_sinks_configuration(self) -> None:
+        """Test attention sinks (StreamingLLM) configuration.
+
+        Validates that attention sink parameters can be configured for streaming
+        generation. Sinks preserve early context (e.g., system prompt) during
+        KV-cache eviction.
+        """
+        config = TritterConfig(
+            use_attention_sinks=True,
+            num_sink_tokens=8,
+        )
+
+        assert config.use_attention_sinks is True
+        assert config.num_sink_tokens == 8
+
+    def test_attention_config_all_modes(self) -> None:
+        """Test all valid attention mode combinations.
+
+        Validates that each attention mode can be independently configured
+        without affecting other components.
+        """
+        for mode in ["causal", "bidirectional", "prefix_lm", "embedding"]:
+            config = TritterConfig(attention_mode=mode)
+            assert config.attention_mode == mode
