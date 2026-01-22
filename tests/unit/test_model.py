@@ -170,7 +170,7 @@ class TestTritterLayer:
                 if param.grad.abs().max() > 0:
                     has_param_grads = True
                     break
-        
+
         assert has_param_grads, "No layer parameters have non-zero gradients - gradient flow broken"
 
 
@@ -232,7 +232,7 @@ class TestTritterModel:
         model = TritterModel(config)
 
         input_ids = torch.randint(0, config.vocab_size, (1, 4))
-        
+
         # Test forward pass works
         logits = model(input_ids)
         assert logits.shape == (1, 4, config.vocab_size)
@@ -240,13 +240,13 @@ class TestTritterModel:
         # Verify that quantized weights are actually ternary during forward pass
         # Check one of the quantized layers
         layer = model.layers[0]
-        if hasattr(layer.attention, 'q_proj') and isinstance(layer.attention.q_proj, TernaryWeight):
+        if hasattr(layer.attention, "q_proj") and isinstance(layer.attention.q_proj, TernaryWeight):
             q_proj = layer.attention.q_proj
             # Set to eval mode to trigger caching
             model.eval()
             with torch.no_grad():
                 _ = model(input_ids)
-            
+
             # In eval mode, quantized weights should be cached and ternary
             if q_proj._quantized_weight_cache is not None:
                 quantized_vals = q_proj._quantized_weight_cache.unique()

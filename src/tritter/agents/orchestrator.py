@@ -32,19 +32,19 @@ class TaskComplexity(Enum):
     """
 
     # Haiku-tier: Fast, focused, simple
-    TRIVIAL = "haiku"      # Single-line fixes, formatting
-    SIMPLE = "haiku"       # Config changes, small refactors
-    FOCUSED = "haiku"      # Bug fixes with clear scope
+    TRIVIAL = "haiku"  # Single-line fixes, formatting
+    SIMPLE = "haiku"  # Config changes, small refactors
+    FOCUSED = "haiku"  # Bug fixes with clear scope
 
     # Sonnet-tier: Balanced capability/cost
-    MODERATE = "sonnet"    # Module implementation
-    COMPLEX = "sonnet"     # Test suite development
+    MODERATE = "sonnet"  # Module implementation
+    COMPLEX = "sonnet"  # Test suite development
     DOCUMENTATION = "sonnet"  # Technical writing
 
     # Opus-tier: Maximum capability
     ARCHITECTURE = "opus"  # System design decisions
-    PLANNING = "opus"      # Multi-phase implementation plans
-    RESEARCH = "opus"      # Synthesis of multiple sources
+    PLANNING = "opus"  # Multi-phase implementation plans
+    RESEARCH = "opus"  # Synthesis of multiple sources
 
 
 @dataclass
@@ -59,6 +59,7 @@ class TaskSpec:
         dependencies: Task IDs this depends on
         run_in_background: Whether to run async
     """
+
     description: str
     prompt: str
     complexity: TaskComplexity
@@ -93,7 +94,6 @@ Reference: docs/tritter-comprehensive-implementation-plan.md Part 1""",
         complexity=TaskComplexity.FOCUSED,
         subagent_type="general-purpose",
     ),
-
     "implement_flex_attention": TaskSpec(
         description="Implement FlexAttention module",
         prompt="""Create FlexAttention integration module.
@@ -110,7 +110,6 @@ Include comprehensive docstrings with "Why" explanations per DEVELOPMENT_STANDAR
         complexity=TaskComplexity.COMPLEX,
         subagent_type="general-purpose",
     ),
-
     "add_attention_config": TaskSpec(
         description="Add attention mode config",
         prompt="""Add attention configuration options to TritterConfig.
@@ -130,7 +129,6 @@ Reference: docs/tritter-comprehensive-implementation-plan.md Part 3""",
         complexity=TaskComplexity.MODERATE,
         subagent_type="general-purpose",
     ),
-
     "design_kv_cache": TaskSpec(
         description="Design KV-cache quantization",
         prompt="""Design INT4 KV-cache quantization strategy for 128K context.
@@ -148,14 +146,12 @@ Output: Detailed implementation plan with code structure""",
         complexity=TaskComplexity.ARCHITECTURE,
         subagent_type="Plan",
     ),
-
     "run_tests": TaskSpec(
         description="Run test suite",
         prompt="Run pytest and report results. Fix any failures.",
         complexity=TaskComplexity.TRIVIAL,
         subagent_type="Bash",
     ),
-
     "lint_and_format": TaskSpec(
         description="Lint and format code",
         prompt="Run ruff check and ruff format. Fix any issues.",
