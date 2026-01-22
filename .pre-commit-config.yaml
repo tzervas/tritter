@@ -1,0 +1,219 @@
+# Pre-commit hooks for Tritter development
+#
+# Why: Enforces coding standards automatically before commits, preventing
+# CI failures and maintaining code quality. Aligns with DEVELOPMENT_STANDARDS.md.
+#
+# GPU Note: GPU-dependent tests and tasks MUST be run locally and manually.
+# No GPU runners are configured in CI. Use `pytest -m gpu` locally with hardware.
+#
+# Installation:
+#   pip install pre-commit
+#   pre-commit install
+#   pre-commit install --hook-type commit-msg  # Optional: commit message linting
+#
+# Manual run:
+#   pre-commit run --all-files
+#
+# Skip hooks (emergency only):
+#   git commit --no-verify -m "emergency fix"
+
+default_stages: [pre-commit]
+fail_fast: false  # Run all hooks even if one fails, to see all issues
+
+repos:
+  # =============================================================================
+  # Stage 1: Quick checks (fast, catch obvious issues)
+  # =============================================================================
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # Prevent commits to protected branches
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, master, --branch, develop]
+        stages: [pre-commit]
+
+      # File hygiene
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: check-case-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+      # Config file validation
+      - id: check-yaml
+        args: [--unsafe]  # Allow custom tags
+      - id: check-toml
+      - id: check-json
+
+      # Security
+      - id: detect-private-key
+      - id: check-merge-conflict
+      - id: check-symlinks
+
+  # =============================================================================
+  # Stage 2: Code formatting (auto-fix, run before linting)
+  # =============================================================================
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.0
+    hooks:
+      # Auto-format code (runs first to fix style before lint)
+      - id: ruff-format
+        types_or: [python, pyi]
+        stages: [pre-commit]
+
+      # Lint and auto-fix what's possible
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+        stages: [pre-commit]
+
+  # =============================================================================
+  # Stage 3: Static analysis (catches bugs and type errors)
+  # =============================================================================
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        name: mypy (src)
+        files: ^src/
+        additional_dependencies:
+          - torch>=2.1.0
+          - numpy>=1.24.0
+          - types-PyYAML
+        args: [--config-file=pyproject.toml]
+        stages: [pre-commit]
+
+  # =============================================================================
+  # Stage 4: Project-specific validation
+  # =============================================================================
+
+  - repo: local
+    hooks:
+      # Validate __all__ exports match imports
+      - id: validate-imports
+        name: Validate __all__ exports
+        entry: python -m devtools.import_validator --strict
+        language: system
+        types: [python]
+        files: __init__\.py$
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Verify core imports work
+      - id: verify-imports
+        name: Verify tritter imports
+        entry: python -c "from tritter import TritterModel, TritterConfig; print('Core imports OK')"
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Check for common anti-patterns
+      - id: check-antipatterns
+        name: Check for anti-patterns
+        entry: python -c "
+import sys
+import re
+from pathlib import Path
+
+errors = []
+for f in Path('src').rglob('*.py'):
+    content = f.read_text()
+    # Check for hardcoded vocab_size in tests
+    if 'vocab_size=1000' in content or 'vocab_size=100' in content:
+        if 'test' in str(f).lower():
+            errors.append(f'{f}: Hardcoded vocab_size in test (use config.vocab_size)')
+    # Check for manual causal mask creation
+    if 'torch.triu' in content and 'mask' in content.lower():
+        errors.append(f'{f}: Manual causal mask detected (use is_causal=True)')
+
+if errors:
+    print('Anti-pattern violations:')
+    for e in errors:
+        print(f'  {e}')
+    sys.exit(1)
+print('No anti-patterns detected')
+"
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # =============================================================================
+  # Stage 5: Documentation quality (optional, for docs changes)
+  # =============================================================================
+
+  - repo: local
+    hooks:
+      # Check docstrings have "Why" section in modified files
+      - id: check-docstring-why
+        name: Check docstrings have Why section
+        entry: python -c "
+import ast
+import sys
+from pathlib import Path
+
+def check_file(filepath):
+    issues = []
+    try:
+        tree = ast.parse(Path(filepath).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                if node.name.startswith('_'):
+                    continue
+                docstring = ast.get_docstring(node)
+                if docstring and len(docstring) > 100:  # Non-trivial docstring
+                    if 'Why:' not in docstring and 'Why ' not in docstring:
+                        issues.append(f'{filepath}:{node.lineno}: {node.name} missing Why section')
+    except SyntaxError:
+        pass
+    return issues
+
+all_issues = []
+for arg in sys.argv[1:]:
+    if arg.endswith('.py'):
+        all_issues.extend(check_file(arg))
+
+if all_issues:
+    print('Docstrings missing Why section:')
+    for issue in all_issues[:10]:  # Limit output
+        print(f'  {issue}')
+    if len(all_issues) > 10:
+        print(f'  ... and {len(all_issues) - 10} more')
+    # Warning only, don't fail
+    print('Consider adding Why sections to explain design decisions.')
+"
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
+# =============================================================================
+# CI Configuration
+# =============================================================================
+#
+# NOTE: GPU tests MUST be run locally and manually. No GPU runners in CI.
+# CI runs CPU-only validation:
+#   - Format check
+#   - Lint
+#   - Type check
+#   - Unit tests (CPU only, -m "not gpu")
+#
+# Local GPU testing:
+#   pytest -m gpu tests/  # Requires RTX 5080 or compatible GPU
+#
+ci:
+  autofix_commit_msg: "style: auto-fix from pre-commit hooks"
+  autofix_prs: true
+  autoupdate_branch: develop
+  autoupdate_schedule: weekly
+  # Skip hooks that require local environment
+  skip:
+    - validate-imports
+    - verify-imports
+    - check-antipatterns
+    - check-docstring-why
+    - mypy

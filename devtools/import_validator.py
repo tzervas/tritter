@@ -110,7 +110,7 @@ class ImportValidator:
         Returns:
             Set of names that are imported (available in module namespace).
         """
-        imported: set[str] = []
+        imported: set[str] = set()
 
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -119,7 +119,7 @@ class ImportValidator:
                     # import foo as bar -> bar is available
                     name = alias.asname if alias.asname else alias.name
                     # For dotted imports like "import a.b", only "a" is available
-                    imported.append(name.split(".")[0])
+                    imported.add(name.split(".")[0])
             elif isinstance(node, ast.ImportFrom):
                 if node.names:
                     for alias in node.names:
@@ -127,9 +127,9 @@ class ImportValidator:
                         # from x import y as z -> z is available
                         name = alias.asname if alias.asname else alias.name
                         if name != "*":  # Skip star imports
-                            imported.append(name)
+                            imported.add(name)
 
-        return set(imported)
+        return imported
 
     def _extract_all(self, tree: ast.AST) -> set[str] | None:
         """Extract __all__ definition from an AST.
@@ -172,22 +172,22 @@ class ImportValidator:
         Returns:
             Set of names defined at module level (classes, functions, variables).
         """
-        defined: set[str] = []
+        defined: set[str] = set()
 
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, ast.ClassDef):
-                defined.append(node.name)
+                defined.add(node.name)
             elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                defined.append(node.name)
+                defined.add(node.name)
             elif isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
-                        defined.append(target.id)
+                        defined.add(target.id)
             elif isinstance(node, ast.AnnAssign):
                 if isinstance(node.target, ast.Name):
-                    defined.append(node.target.id)
+                    defined.add(node.target.id)
 
-        return set(defined)
+        return defined
 
     def validate_file(self, file_path: Path) -> list[ImportIssue]:
         """Validate a single __init__.py file.

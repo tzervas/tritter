@@ -130,8 +130,12 @@ class ValidationRunner:
             print(f"\n>>> Running: {' '.join(cmd)}")
 
         try:
+            # Security note: Using list form (not shell=True) prevents shell injection.
+            # Each element is passed as a separate argv entry to the subprocess.
+            # Commands are constructed from static strings; only test_args may vary,
+            # but as a local dev tool this is acceptable risk.
             result = subprocess.run(
-                cmd,
+                list(cmd),  # Ensure it's a list, not potentially shell-parsed string
                 cwd=self.project_root,
                 capture_output=True,
                 text=True,
@@ -267,9 +271,9 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    python -m devtools.validate              # Run all checks
+    python -m devtools.validate              # Run all checks (verbose by default)
     python -m devtools.validate --quick      # Skip tests
-    python -m devtools.validate -v           # Verbose output
+    python -m devtools.validate -q           # Quiet output
         """,
     )
     parser.add_argument(
@@ -278,17 +282,10 @@ Examples:
         help="Skip tests (format, lint, typecheck only)",
     )
     parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        default=True,
-        help="Verbose output (default: True)",
-    )
-    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
-        help="Minimal output",
+        help="Minimal output (suppress step-by-step details)",
     )
     parser.add_argument(
         "test_args",

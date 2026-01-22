@@ -39,6 +39,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
     "mypy>=1.7.0",
+    "pre-commit>=3.6.0",
 ]
 
 inference = [
@@ -104,6 +105,10 @@ testpaths = [
 ]
 pythonpath = [
     "src"
+]
+markers = [
+    "gpu: marks tests as requiring GPU hardware (deselect with '-m \"not gpu\"')",
+    "slow: marks tests as slow running (deselect with '-m \"not slow\"')",
 ]
 
 [tool.coverage.run]

@@ -10,6 +10,10 @@ Components:
     - memory_utils: Memory tracking and budget management (stub)
 """
 
+# Import submodules for backward compatibility (allows `from tritter.utils import device_utils`)
+from tritter.utils import device_utils, memory_utils
+
+# Import commonly used functions for convenience
 from tritter.utils.device_utils import (
     get_device_memory_info,
     get_optimal_device,
@@ -17,6 +21,10 @@ from tritter.utils.device_utils import (
 )
 
 __all__ = [
+    # Submodules (backward compatibility)
+    "device_utils",
+    "memory_utils",
+    # Functions (convenience)
     "get_optimal_device",
     "get_device_memory_info",
     "optimize_for_rtx5080",

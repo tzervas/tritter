@@ -220,18 +220,17 @@ class ProjectAnalyzer:
             ):
                 docstring = tree.body[0].value.value
 
-            for node in ast.walk(tree):
+            # Iterate only over top-level nodes (O(n) instead of O(n²))
+            # This avoids nested ast.walk() which would re-traverse the tree
+            for node in tree.body:
                 if isinstance(node, ast.ClassDef):
                     classes.append(node.name)
                 elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                    # Only top-level functions, not methods
-                    if not any(
-                        isinstance(parent, ast.ClassDef)
-                        for parent in ast.walk(tree)
-                        if hasattr(parent, "body") and node in getattr(parent, "body", [])
-                    ):
-                        functions.append(node.name)
+                    # Top-level functions only (methods are inside ClassDef.body)
+                    functions.append(node.name)
         except SyntaxError:
+            # Intentionally silent: gracefully handle modules with syntax errors
+            # during project analysis. These are reported elsewhere (e.g., linting).
             pass
 
         return classes, functions, docstring
