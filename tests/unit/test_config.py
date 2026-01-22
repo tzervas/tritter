@@ -194,6 +194,22 @@ class TestTritterConfig:
         assert config.use_attention_sinks is True
         assert config.num_sink_tokens == 8
 
+    def test_attention_sinks_requires_positive_num_sink_tokens(self) -> None:
+        """Test that attention sinks requires positive num_sink_tokens.
+
+        Validates that enabling use_attention_sinks=True without a valid num_sink_tokens
+        fails with assertion error. Zero or negative sink tokens would make the
+        StreamingLLM attention pattern degenerate or invalid.
+        """
+        with pytest.raises(AssertionError):
+            TritterConfig(use_attention_sinks=True, num_sink_tokens=None)
+
+        with pytest.raises(AssertionError):
+            TritterConfig(use_attention_sinks=True, num_sink_tokens=0)
+
+        with pytest.raises(AssertionError):
+            TritterConfig(use_attention_sinks=True, num_sink_tokens=-1)
+
     def test_attention_config_all_modes(self) -> None:
         """Test all valid attention mode combinations.
 
