@@ -72,27 +72,22 @@ class ModelRouter:
             ("bug_fix", "single_file"): ("haiku", "general-purpose"),
             ("bug_fix", "module"): ("sonnet", "general-purpose"),
             ("bug_fix", "system"): ("sonnet", "general-purpose"),
-
             # Implementation
             ("implement", "single_file"): ("haiku", "general-purpose"),
             ("implement", "module"): ("sonnet", "general-purpose"),
             ("implement", "system"): ("opus", "Plan"),
-
             # Design/Architecture
             ("design", "single_file"): ("sonnet", "Plan"),
             ("design", "module"): ("opus", "Plan"),
             ("design", "system"): ("opus", "Plan"),
-
             # Testing
             ("test", "single_file"): ("haiku", "Bash"),
             ("test", "module"): ("sonnet", "general-purpose"),
             ("test", "system"): ("sonnet", "general-purpose"),
-
             # Documentation
             ("docs", "single_file"): ("haiku", "general-purpose"),
             ("docs", "module"): ("sonnet", "general-purpose"),
             ("docs", "system"): ("sonnet", "general-purpose"),
-
             # Exploration
             ("explore", "single_file"): ("haiku", "Explore"),
             ("explore", "module"): ("haiku", "Explore"),
@@ -101,7 +96,7 @@ class ModelRouter:
 
         return routing_table.get(
             (task_type, scope),
-            ("sonnet", "general-purpose")  # Default fallback
+            ("sonnet", "general-purpose"),  # Default fallback
         )
 
     def estimate_cost(
@@ -124,10 +119,9 @@ class ModelRouter:
         and helps track development costs over time.
         """
         costs = self.COSTS[model]
-        return (
-            (input_tokens / 1_000_000) * costs["input"] +
-            (output_tokens / 1_000_000) * costs["output"]
-        )
+        return (input_tokens / 1_000_000) * costs["input"] + (output_tokens / 1_000_000) * costs[
+            "output"
+        ]
 
 
 # === Parallel Execution Patterns ===

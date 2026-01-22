@@ -5,7 +5,6 @@ Implements the quantization scheme from "The Era of 1-bit LLMs: All Large Langua
 are in 1.58 Bits" where weights are quantized to {-1, 0, 1}.
 """
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

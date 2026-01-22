@@ -211,6 +211,7 @@ class TritterConfig:
             assert self.num_sink_tokens is not None and self.num_sink_tokens > 0, (
                 f"num_sink_tokens must be > 0 when use_attention_sinks=True, got {self.num_sink_tokens}"
             )
+
     @property
     def head_dim(self) -> int:
         """Dimension of each attention head.

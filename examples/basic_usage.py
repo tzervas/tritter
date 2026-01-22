@@ -68,9 +68,9 @@ def main() -> None:
     config = TritterConfig(
         model_size="3B",
         hidden_size=512,  # Reduced from 2048 - Why: Faster initialization for demo
-        num_heads=8,      # Must divide hidden_size evenly (512 / 8 = 64 per head)
-        num_layers=4,     # Reduced from 24 - Why: Faster forward pass for demo
-        vocab_size=10000, # Reduced from 65536 - Why: Match reduced tokenizer vocab
+        num_heads=8,  # Must divide hidden_size evenly (512 / 8 = 64 per head)
+        num_layers=4,  # Reduced from 24 - Why: Faster forward pass for demo
+        vocab_size=10000,  # Reduced from 65536 - Why: Match reduced tokenizer vocab
         max_position_embeddings=1024,  # Reduced from 128K - Why: Less memory for demo
         use_bitnet=True,  # Why: Demonstrate ternary quantization even in small model
         use_flash_attention=True,  # Why: Show attention optimization (placeholder currently)
