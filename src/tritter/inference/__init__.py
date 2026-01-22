@@ -54,6 +54,7 @@ TODO: Implement after:
 3. Choose primary deployment target (vLLM vs TensorRT vs custom)
 """
 
+
 class KVCacheManager:
     """Stub KV-cache manager for INT4 quantized key-value storage.
 
@@ -79,8 +80,7 @@ class KVCacheManager:
 
     def __init__(self) -> None:
         raise NotImplementedError(
-            "KVCacheManager is not yet implemented. "
-            "See module docstring for memory calculations."
+            "KVCacheManager is not yet implemented. See module docstring for memory calculations."
         )
 
 
@@ -107,8 +107,7 @@ class EmbeddingRounder:
 
     def __init__(self) -> None:
         raise NotImplementedError(
-            "EmbeddingRounder is not yet implemented. "
-            "See module docstring for rounding strategies."
+            "EmbeddingRounder is not yet implemented. See module docstring for rounding strategies."
         )
 
 

@@ -85,8 +85,7 @@ class CurriculumScheduler:
 
     def __init__(self) -> None:
         raise NotImplementedError(
-            "CurriculumScheduler is not yet implemented. "
-            "See module docstring for planned design."
+            "CurriculumScheduler is not yet implemented. See module docstring for planned design."
         )
 
 
