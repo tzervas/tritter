@@ -205,6 +205,12 @@ class TritterConfig:
                 f"sliding_window_size must be > 0 when use_sliding_window=True, got {self.sliding_window_size}"
             )
 
+        if self.use_attention_sinks:
+            # Why: Attention sinks require a positive number of sink tokens. Zero or negative
+            # values would make the StreamingLLM attention pattern degenerate or invalid.
+            assert self.num_sink_tokens is not None and self.num_sink_tokens > 0, (
+                f"num_sink_tokens must be > 0 when use_attention_sinks=True, got {self.num_sink_tokens}"
+            )
     @property
     def head_dim(self) -> int:
         """Dimension of each attention head.
