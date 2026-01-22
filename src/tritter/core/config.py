@@ -89,7 +89,7 @@ class TritterConfig:
     Why: Sliding window attention bounds the context each token attends to (e.g., 4K tokens),
     reducing KV-cache from O(N²) to O(N*W) where W=window_size. This enables 128K context
     windows within 16GB VRAM while maintaining local dependencies. Global attention can be
-    implemented via DistilBERT-style attention sinks (see num_sink_tokens).
+    implemented via attention sinks (see num_sink_tokens).
 
     Note: Not yet implemented, placeholder for future FlexAttention patterns.
     """
