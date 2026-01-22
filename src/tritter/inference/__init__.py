@@ -55,3 +55,17 @@ TODO: Implement after:
 """
 
 __all__ = ["InferenceEngine"]
+
+
+class InferenceEngine:
+    """Stub inference engine for RTX 5080 deployment.
+
+    This placeholder exists so that ``from tritter.inference import InferenceEngine``
+    succeeds while the real implementation is being developed.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        raise NotImplementedError(
+            "InferenceEngine is not implemented yet. "
+            "This is a stub placeholder; see the module docstring for details."
+        )
