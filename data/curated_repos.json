@@ -1,0 +1,167 @@
+{
+  "python": {
+    "ml_frameworks": [
+      "pytorch/pytorch",
+      "tensorflow/tensorflow",
+      "huggingface/transformers",
+      "jax-ml/jax",
+      "Lightning-AI/pytorch-lightning",
+      "keras-team/keras",
+      "google/flax",
+      "microsoft/DeepSpeed"
+    ],
+    "ai_tools": [
+      "langchain-ai/langchain",
+      "openai/openai-python",
+      "anthropics/anthropic-sdk-python",
+      "vllm-project/vllm",
+      "huggingface/diffusers",
+      "comfyanonymous/ComfyUI"
+    ],
+    "quality_libraries": [
+      "psf/requests",
+      "pallets/flask",
+      "tiangolo/fastapi",
+      "django/django",
+      "encode/httpx",
+      "pydantic/pydantic",
+      "python-poetry/poetry",
+      "astral-sh/ruff",
+      "python/mypy"
+    ],
+    "data_science": [
+      "numpy/numpy",
+      "pandas-dev/pandas",
+      "scikit-learn/scikit-learn",
+      "matplotlib/matplotlib",
+      "plotly/plotly.py",
+      "scipy/scipy",
+      "statsmodels/statsmodels"
+    ],
+    "infrastructure": [
+      "apache/airflow",
+      "celery/celery",
+      "redis/redis-py",
+      "docker/docker-py",
+      "kubernetes-client/python"
+    ]
+  },
+  "rust": {
+    "systems": [
+      "rust-lang/rust",
+      "tokio-rs/tokio",
+      "hyperium/hyper",
+      "rust-lang/cargo",
+      "actix/actix-web",
+      "serde-rs/serde"
+    ],
+    "ml": [
+      "huggingface/candle",
+      "burn-rs/burn",
+      "rust-ml/linfa",
+      "tensorbase/tensorbase"
+    ],
+    "tools": [
+      "rust-lang/rustfmt",
+      "rust-lang/rust-clippy",
+      "astral-sh/ruff",
+      "sharkdp/fd",
+      "sharkdp/bat",
+      "BurntSushi/ripgrep"
+    ],
+    "parsers": [
+      "tree-sitter/tree-sitter",
+      "gluon-lang/gluon",
+      "rust-analyzer/rust-analyzer"
+    ],
+    "crypto_web3": [
+      "solana-labs/solana",
+      "rust-bitcoin/rust-bitcoin",
+      "paritytech/substrate"
+    ]
+  },
+  "javascript": {
+    "frameworks": [
+      "facebook/react",
+      "vuejs/core",
+      "sveltejs/svelte",
+      "angular/angular",
+      "vercel/next.js",
+      "remix-run/remix"
+    ],
+    "tools": [
+      "microsoft/TypeScript",
+      "eslint/eslint",
+      "prettier/prettier",
+      "babel/babel",
+      "webpack/webpack",
+      "vitejs/vite"
+    ],
+    "runtime": [
+      "nodejs/node",
+      "denoland/deno",
+      "oven-sh/bun"
+    ],
+    "testing": [
+      "jestjs/jest",
+      "vitest-dev/vitest",
+      "cypress-io/cypress",
+      "playwright-dev/playwright"
+    ]
+  },
+  "curation_criteria": {
+    "description": "High-quality repositories for Tritter training",
+    "selection_criteria": [
+      "Permissive license (MIT, Apache-2.0, BSD variants)",
+      "Well-maintained (active development in last 6 months)",
+      "High documentation quality (comprehensive README, API docs)",
+      "Test coverage (presence of tests directory)",
+      "Community adoption (>1000 stars for libraries, >10000 for frameworks)",
+      "Code quality (follows language conventions, readable)",
+      "Educational value (good examples of language idioms)"
+    ],
+    "exclusion_criteria": [
+      "Restrictive licenses (GPL, AGPL, proprietary)",
+      "Abandoned projects (no commits in >1 year)",
+      "Poor documentation (minimal README, no docstrings)",
+      "Generated code (transpiled, minified)",
+      "Student projects (typically low quality)",
+      "Toy examples (too trivial for learning)"
+    ],
+    "usage_notes": [
+      "These repos supplement Stack v2 data with known high-quality examples",
+      "Clone and process separately from main curation pipeline",
+      "Apply same quality filters as Stack v2 processing",
+      "Target 20% of Phase 1 training mix (~20B tokens)"
+    ]
+  },
+  "python_interop": {
+    "description": "Python-Rust interop examples for cross-language understanding",
+    "repos": [
+      "PyO3/pyo3",
+      "PyO3/rust-numpy",
+      "huggingface/tokenizers",
+      "openai/tiktoken",
+      "pola-rs/polars",
+      "astral-sh/uv"
+    ],
+    "notes": "These repos demonstrate idiomatic Rust-Python bindings, critical for ML infrastructure understanding"
+  },
+  "documentation_sources": {
+    "python": [
+      "https://docs.python.org/3/",
+      "https://pytorch.org/docs/stable/",
+      "https://www.tensorflow.org/api_docs/python/",
+      "https://huggingface.co/docs/transformers/",
+      "https://scikit-learn.org/stable/documentation.html"
+    ],
+    "rust": [
+      "https://doc.rust-lang.org/book/",
+      "https://doc.rust-lang.org/rust-by-example/",
+      "https://doc.rust-lang.org/nomicon/",
+      "https://docs.rs/",
+      "https://tokio.rs/tokio/tutorial"
+    ],
+    "notes": "Scrape and process separately. Estimate ~100M tokens combined."
+  }
+}
