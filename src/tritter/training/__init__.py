@@ -120,4 +120,9 @@ class Trainer:
         )
 
 
-__all__ = ["Trainer", "EmbeddingPredictionLoss", "CurriculumScheduler"]
+# TODO: Phase 6 - Export Trainer, EmbeddingPredictionLoss, and CurriculumScheduler
+# These classes are stub implementations that raise NotImplementedError.
+# Once they are fully implemented with working functionality, add them to __all__.
+# Implementation requires: (1) stable model architecture, (2) validated quantization,
+# (3) chosen training framework (Nanotron per project-plan.md)
+__all__: list[str] = []
