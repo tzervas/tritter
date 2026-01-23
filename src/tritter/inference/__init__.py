@@ -54,7 +54,11 @@ TODO: Implement after:
 3. Choose primary deployment target (vLLM vs TensorRT vs custom)
 """
 
-from tritter.inference.layer_streaming import LayerGroupBuffer, LayerLoader
+from tritter.inference.layer_streaming import (
+    LayerGroupBuffer,
+    LayerLoader,
+    StreamingInferenceEngine,
+)
 from tritter.inference.memory_manager import MemoryAllocation, MemoryManager
 from tritter.inference.transfer_engine import TransferEngine, pin_model_weights
 
@@ -155,6 +159,7 @@ __all__ = [
     "LayerLoader",
     "MemoryManager",
     "MemoryAllocation",
+    "StreamingInferenceEngine",
     "TransferEngine",
     "pin_model_weights",
 ]

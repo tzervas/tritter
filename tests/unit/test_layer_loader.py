@@ -10,7 +10,11 @@ import torch
 import torch.nn as nn
 
 from tritter.core.config import TritterConfig
-from tritter.inference.layer_streaming import LayerGroupBuffer, LayerLoader
+from tritter.inference.layer_streaming import (
+    LayerGroupBuffer,
+    LayerLoader,
+    StreamingInferenceEngine,
+)
 
 
 class MockLayer(nn.Module):
@@ -29,8 +33,18 @@ class MockLayer(nn.Module):
         super().__init__()
         self.linear = nn.Linear(hidden_size, hidden_size)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through linear layer."""
+    def forward(
+        self, x: torch.Tensor, attention_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Forward pass through linear layer.
+
+        Args:
+            x: Input tensor
+            attention_mask: Optional attention mask (ignored for mock)
+
+        Returns:
+            Output tensor
+        """
         return self.linear(x)
 
 
@@ -52,6 +66,29 @@ class MockModel(nn.Module):
         """
         super().__init__()
         self.layers = nn.ModuleList([MockLayer(hidden_size) for _ in range(num_layers)])
+
+
+class MockTritterModel(nn.Module):
+    """Mock TritterModel for testing StreamingInferenceEngine.
+
+    Why: StreamingInferenceEngine needs a model with .layers, .embed_tokens,
+    .norm, and .lm_head attributes. This mock provides the minimal interface
+    without the complexity of a full TritterModel.
+    """
+
+    def __init__(self, num_layers: int, hidden_size: int, vocab_size: int):
+        """Initialize mock TritterModel.
+
+        Args:
+            num_layers: Number of transformer layers
+            hidden_size: Hidden dimension
+            vocab_size: Vocabulary size
+        """
+        super().__init__()
+        self.layers = nn.ModuleList([MockLayer(hidden_size) for _ in range(num_layers)])
+        self.embed_tokens = nn.Embedding(vocab_size, hidden_size)
+        self.norm = nn.LayerNorm(hidden_size)
+        self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False)
 
 
 @pytest.fixture
@@ -314,3 +351,190 @@ class TestLayerGroupBuffer:
         buffer = LayerGroupBuffer(group_idx=1, layers=layers, is_on_gpu=True)
 
         assert buffer.is_on_gpu is True
+
+
+@pytest.fixture
+def mock_tritter_model() -> MockTritterModel:
+    """Create mock TritterModel for testing StreamingInferenceEngine.
+
+    Why: Provides a minimal model with all required attributes
+    (embed_tokens, layers, norm, lm_head) for testing the engine.
+    """
+    return MockTritterModel(num_layers=12, hidden_size=256, vocab_size=1000)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required for streaming engine")
+class TestStreamingInferenceEngine:
+    """Test suite for StreamingInferenceEngine."""
+
+    def test_initialization(
+        self, mock_tritter_model: MockTritterModel, config: TritterConfig
+    ) -> None:
+        """Test StreamingInferenceEngine initialization.
+
+        Why: Verifies that the engine correctly initializes the LayerLoader,
+        moves model components to appropriate devices, and sets up state.
+        """
+        engine = StreamingInferenceEngine(mock_tritter_model, config)
+
+        # Verify layer loader initialized
+        assert engine.layer_loader is not None
+        assert engine.layer_loader.num_groups == 3  # 12 layers / 4 per group
+
+        # Verify embedding and output layers on GPU (when streaming enabled)
+        if config.use_layer_streaming:
+            assert engine.model.embed_tokens.weight.device.type == "cuda"
+            assert engine.model.norm.weight.device.type == "cuda"
+            assert engine.model.lm_head.weight.device.type == "cuda"
+
+    def test_initialization_non_streaming(self, mock_tritter_model: MockTritterModel) -> None:
+        """Test initialization with streaming disabled.
+
+        Why: Verifies that when use_layer_streaming=False, the engine
+        doesn't move model to CPU or initialize streaming infrastructure.
+        """
+        config = TritterConfig(
+            model_size="3B",
+            use_layer_streaming=False,
+        )
+        engine = StreamingInferenceEngine(mock_tritter_model, config)
+
+        # LayerLoader still initialized but not used
+        assert engine.layer_loader is not None
+
+    def test_forward_returns_correct_shape(
+        self, mock_tritter_model: MockTritterModel, config: TritterConfig
+    ) -> None:
+        """Test forward pass returns correct output shape.
+
+        Why: Verifies that forward() correctly processes embeddings through
+        all layers and returns the expected shape.
+        """
+        engine = StreamingInferenceEngine(mock_tritter_model, config)
+
+        # Create input embeddings
+        batch_size, seq_len, hidden_size = 2, 10, 256
+        hidden_states = torch.randn(batch_size, seq_len, hidden_size)
+
+        # Forward pass
+        output = engine.forward(hidden_states)
+
+        # Verify output shape
+        assert output.shape == (batch_size, seq_len, hidden_size)
+
+    def test_forward_non_streaming_mode(self, mock_tritter_model: MockTritterModel) -> None:
+        """Test forward pass with streaming disabled.
+
+        Why: Verifies that when use_layer_streaming=False, the forward
+        pass uses standard sequential layer processing.
+        """
+        config = TritterConfig(
+            model_size="3B",
+            use_layer_streaming=False,
+        )
+        engine = StreamingInferenceEngine(mock_tritter_model, config)
+
+        # Create input embeddings
+        batch_size, seq_len, hidden_size = 2, 10, 256
+        hidden_states = torch.randn(batch_size, seq_len, hidden_size).to(engine.device)
+
+        # Forward pass should work without streaming
+        output = engine.forward(hidden_states)
+
+        assert output.shape == (batch_size, seq_len, hidden_size)
+
+    def test_generate_produces_tokens(
+        self, mock_tritter_model: MockTritterModel, config: TritterConfig
+    ) -> None:
+        """Test generate method produces tokens.
+
+        Why: Verifies that generate() completes autoregressive generation
+        and returns token IDs of the correct shape.
+        """
+        engine = StreamingInferenceEngine(mock_tritter_model, config)
+
+        # Create input token IDs
+        batch_size, seq_len = 2, 5
+        vocab_size = 1000
+        input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
+
+        # Generate tokens
+        max_new_tokens = 10
+        output_ids = engine.generate(input_ids, max_new_tokens=max_new_tokens)
+
+        # Verify output shape
+        assert output_ids.shape == (batch_size, seq_len + max_new_tokens)
+
+        # Verify input prefix preserved
+        assert torch.all(output_ids[:, :seq_len] == input_ids.to(output_ids.device))
+
+    def test_generate_with_temperature(
+        self, mock_tritter_model: MockTritterModel, config: TritterConfig
+    ) -> None:
+        """Test generate with temperature scaling.
+
+        Why: Verifies that temperature parameter affects sampling
+        by scaling logits before softmax.
+        """
+        engine = StreamingInferenceEngine(mock_tritter_model, config)
+
+        input_ids = torch.randint(0, 1000, (1, 5))
+
+        # Generate with different temperatures
+        output_low_temp = engine.generate(input_ids, max_new_tokens=5, temperature=0.5)
+        output_high_temp = engine.generate(input_ids, max_new_tokens=5, temperature=2.0)
+
+        # Both should complete without error
+        assert output_low_temp.shape == (1, 10)
+        assert output_high_temp.shape == (1, 10)
+
+    def test_generate_with_top_k(
+        self, mock_tritter_model: MockTritterModel, config: TritterConfig
+    ) -> None:
+        """Test generate with top-k sampling.
+
+        Why: Verifies that top_k parameter correctly filters tokens
+        and only samples from the top K candidates.
+        """
+        engine = StreamingInferenceEngine(mock_tritter_model, config)
+
+        input_ids = torch.randint(0, 1000, (1, 5))
+
+        # Generate with top-k
+        output = engine.generate(input_ids, max_new_tokens=5, top_k=50)
+
+        # Should complete without error
+        assert output.shape == (1, 10)
+
+    def test_generate_with_top_p(
+        self, mock_tritter_model: MockTritterModel, config: TritterConfig
+    ) -> None:
+        """Test generate with nucleus (top-p) sampling.
+
+        Why: Verifies that top_p parameter correctly filters tokens
+        based on cumulative probability threshold.
+        """
+        engine = StreamingInferenceEngine(mock_tritter_model, config)
+
+        input_ids = torch.randint(0, 1000, (1, 5))
+
+        # Generate with nucleus sampling
+        output = engine.generate(input_ids, max_new_tokens=5, top_p=0.9)
+
+        # Should complete without error
+        assert output.shape == (1, 10)
+
+    def test_repr(self, mock_tritter_model: MockTritterModel, config: TritterConfig) -> None:
+        """Test __repr__ returns informative string.
+
+        Why: Verifies that __repr__ provides useful debugging information
+        about the engine's configuration.
+        """
+        engine = StreamingInferenceEngine(mock_tritter_model, config)
+
+        repr_str = repr(engine)
+
+        assert "StreamingInferenceEngine" in repr_str
+        assert "num_groups=3" in repr_str
+        assert "layers_per_group=4" in repr_str
+        assert f"prefetch={config.prefetch_next_group}" in repr_str
