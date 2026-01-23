@@ -84,16 +84,26 @@ class TernaryWeight(nn.Module):
         """Forward pass with quantized weights.
 
         Args:
-            x: Input tensor of shape (batch_size, in_features) or (batch_size, seq_len, in_features)
+            x: Input tensor of shape (batch_size, in_features) or
+               (batch_size, seq_len, in_features)
 
         Returns:
-            Output tensor of shape (batch_size, out_features) or (batch_size, seq_len, out_features)
+            Output tensor of shape (batch_size, out_features) or
+            (batch_size, seq_len, out_features)
 
-        Why: Implements straight-through estimator (STE) for gradient flow. During forward pass,
-        weights are quantized to {-1, 0, 1}, but gradients flow through as if quantization was
-        identity function. This is achieved by detaching quantized weights and adding back the
-        full-precision weights for autograd. In eval mode, quantized weights are cached to avoid
-        repeated quantization overhead, significantly improving inference speed.
+        Why: Implements straight-through estimator (STE) for gradient flow. STE is required
+        because quantization is non-differentiable (hard thresholding has zero gradients
+        almost everywhere). Without STE, gradients cannot flow back to update weights.
+
+        How STE works:
+        - Forward pass: Uses quantized weights q = quantize(w) for computation
+        - Backward pass: Treats quantization as identity, so dq/dw = 1
+        - Implementation: q_ste = w + (q - w).detach()
+          * Forward: Evaluates to q (quantized weights are used)
+          * Backward: dq_ste/dw = 1 + 0 = 1 (gradient flows through w)
+
+        In eval mode, quantized weights are cached to avoid repeated quantization,
+        significantly improving inference speed.
         """
         # Use cached quantized weights in eval mode for efficiency
         if not self.training:
@@ -109,12 +119,16 @@ class TernaryWeight(nn.Module):
             self._cache_valid = False
 
         # Implement straight-through estimator (STE)
-        # Detach quantized weights from computation graph, then add gradient path
-        # through full-precision weights. This allows gradients to flow during backprop
-        # while using quantized weights during forward pass.
+        # STE is required because quantization is non-differentiable (hard thresholding
+        # has zero gradients almost everywhere). Without STE, gradients cannot flow
+        # back to update the full-precision shadow weights.
+        #
+        # Formula: q_ste = w + (q - w).detach()
+        #   Forward:  Evaluates to q (quantized weights used in computation)
+        #   Backward: ∂q_ste/∂w = 1 + 0 = 1 (gradients flow to full-precision weights)
         if self.training:
-            # STE: gradient flows through self.weight, not through quantization
-            quantized_weight = quantized_weight.detach() + self.weight - self.weight.detach()
+            # STE: forward uses quantized, backward flows through self.weight
+            quantized_weight = self.weight + (quantized_weight - self.weight).detach()
 
         # Apply per-channel scaling
         scaled_weight = quantized_weight * self.scale
