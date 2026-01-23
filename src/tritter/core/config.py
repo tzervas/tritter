@@ -130,6 +130,51 @@ class TritterConfig:
     int4_kv_cache: bool = True
     gradient_checkpointing: bool = True
 
+    # Progressive Layer Loading
+    use_layer_streaming: bool = False
+    """Enable progressive layer loading for large model inference.
+
+    Why: Allows running models larger than GPU VRAM by streaming layer
+    groups through memory. Set to True for models that don't fit in VRAM.
+    """
+
+    layer_group_size: int = 4
+    """Number of layers to load per group.
+
+    Why: Larger groups reduce transfer overhead but require more VRAM.
+    Optimal value depends on model size and available memory.
+
+    Constraints:
+        - Must be > 0
+        - Should divide num_layers evenly (or remainder handled)
+        - Typical range: 2-8 layers
+    """
+
+    gpu_memory_budget_gb: float = 14.0
+    """Maximum GPU memory to use for inference (in GB).
+
+    Why: Reserves headroom for CUDA overhead and unexpected allocations.
+    Typically set to 85-90% of total VRAM.
+
+    Constraints:
+        - Must be > 0
+        - Should be less than physical VRAM
+    """
+
+    use_pinned_memory: bool = True
+    """Use CUDA pinned memory for faster host-to-device transfers.
+
+    Why: Pinned memory enables async DMA transfers at full PCIe bandwidth.
+    Disable if system RAM is limited.
+    """
+
+    prefetch_next_group: bool = True
+    """Prefetch next layer group while processing current group.
+
+    Why: Overlaps transfer with computation to hide latency.
+    Requires double the layer group memory but significantly improves throughput.
+    """
+
     # Multimodal configuration
     modalities: list[str] = field(default_factory=lambda: ["text", "code", "image", "audio"])
     use_early_fusion: bool = True
@@ -220,6 +265,15 @@ class TritterConfig:
             # values would make the StreamingLLM attention pattern degenerate or invalid.
             assert self.num_sink_tokens is not None and self.num_sink_tokens > 0, (
                 f"num_sink_tokens must be > 0 when use_attention_sinks=True, got {self.num_sink_tokens}"
+            )
+
+        # Validate layer streaming configuration
+        if self.use_layer_streaming:
+            assert self.layer_group_size > 0, (
+                f"layer_group_size must be > 0, got {self.layer_group_size}"
+            )
+            assert self.gpu_memory_budget_gb > 0, (
+                f"gpu_memory_budget_gb must be > 0, got {self.gpu_memory_budget_gb}"
             )
 
         # Validate minimum vocab_size for byte-level encoding
