@@ -164,6 +164,12 @@ class TritterConfig:
         # Why: 7B uses wider layers (4096 hidden) and deeper stack (32 layers) vs 3B.
         # This follows proven scaling from Llama-3/Mistral architectures.
         if self.model_size == "7B":
+            # Check if intermediate_size is at default ratio before updating hidden_size
+            # Why: We need to determine if intermediate_size was explicitly set by checking
+            # if it maintains the 4x ratio to hidden_size. This must happen BEFORE we update
+            # hidden_size, otherwise we lose the ability to detect the default.
+            is_intermediate_default = self.intermediate_size == 4 * self.hidden_size
+
             # Only override if still at default 3B values (preserve user-specified values)
             if self.hidden_size == 2048:
                 self.hidden_size = 4096
@@ -171,9 +177,13 @@ class TritterConfig:
                 self.num_layers = 32
             if self.num_heads == 16:
                 self.num_heads = 32
-            # Only update intermediate_size if it's still at the 4x hidden_size ratio
-            if self.intermediate_size == 8192:  # 4x the 3B hidden_size
-                self.intermediate_size = 16384  # 4x the 7B hidden_size
+
+            # Only update intermediate_size if it was at the default 4x ratio
+            # Why: If user explicitly set intermediate_size (e.g., intermediate_size=12000
+            # with model_size="7B"), we preserve their choice. We only auto-scale if they
+            # left it at the default ratio.
+            if is_intermediate_default:
+                self.intermediate_size = 4 * self.hidden_size
 
         # Ensure head dimension is valid
         # Why: Multi-head attention splits hidden_size across heads. Non-divisible configs
@@ -222,7 +232,6 @@ class TritterConfig:
             f"vocab_size ({self.vocab_size}) must be >= {min_vocab_size} "
             f"(8 special tokens + 256 byte values for byte-level encoding)"
         )
-
 
     @property
     def head_dim(self) -> int:

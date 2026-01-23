@@ -219,3 +219,46 @@ class TestTritterConfig:
         for mode in ["causal", "bidirectional", "prefix_lm", "embedding"]:
             config = TritterConfig(attention_mode=mode)
             assert config.attention_mode == mode
+
+    def test_7b_preserves_custom_intermediate_size(self) -> None:
+        """Test that 7B model preserves custom intermediate_size.
+
+        Validates fix for issue #3: When model_size="7B", custom intermediate_size
+        values should not be overwritten. The auto-configuration should only update
+        intermediate_size if it's at the default 4x ratio to hidden_size.
+        """
+        # Test with explicit intermediate_size that differs from default
+        config = TritterConfig(model_size="7B", intermediate_size=12000)
+
+        assert config.model_size == "7B"
+        assert config.hidden_size == 4096  # Auto-configured
+        assert config.intermediate_size == 12000  # Preserved user value
+
+    def test_7b_auto_scales_default_intermediate_size(self) -> None:
+        """Test that 7B model auto-scales intermediate_size when at default ratio.
+
+        Validates that when intermediate_size is at the default 4x ratio (not explicitly
+        customized), it gets auto-scaled along with hidden_size for 7B models.
+        """
+        # When not explicitly set, should auto-scale (8192 -> 16384)
+        config = TritterConfig(model_size="7B")
+
+        assert config.model_size == "7B"
+        assert config.hidden_size == 4096
+        assert config.intermediate_size == 16384  # Auto-scaled to 4x 4096
+
+    def test_7b_with_custom_hidden_and_intermediate_size(self) -> None:
+        """Test 7B with both custom hidden_size and intermediate_size.
+
+        Validates that when both hidden_size and intermediate_size are explicitly
+        set, both values are preserved (no auto-configuration).
+        """
+        config = TritterConfig(
+            model_size="7B",
+            hidden_size=3072,
+            intermediate_size=9216,
+        )
+
+        assert config.model_size == "7B"
+        assert config.hidden_size == 3072  # Preserved
+        assert config.intermediate_size == 9216  # Preserved
