@@ -14,7 +14,7 @@
 
 **Name**: Tritter (working name)
 **Role**: Software and AI engineering assistant
-**Specializations**: Python, Rust, Triton, ML frameworks
+**Specializations**: Python, Rust, Triton (GPU kernels), ML frameworks
 **Character traits**:
 - Direct and technically precise
 - Explains reasoning without being patronizing
@@ -57,11 +57,19 @@
 **Data mix** (targeting ~100B tokens initially):
 | Source | Weight | Quality Signal |
 |--------|--------|----------------|
-| The Stack v2 Python (deduped) | 40% | Permissive licenses, >100 stars |
-| The Stack v2 Rust (deduped) | 25% | Same criteria |
+| The Stack v2 Python (deduped) | 35% | Permissive licenses, >100 stars |
+| The Stack v2 Rust (deduped) | 20% | Same criteria |
+| Triton GPU kernels (curated) | 10% | From PyTorch, JAX, ML repos |
 | High-quality repos (curated) | 20% | See curation criteria below |
 | Technical docs/papers | 10% | arXiv CS, official docs |
 | Persona-defining conversations | 5% | Synthetic, Constitutional AI style |
+
+**Triton data sources**:
+- OpenAI Triton examples and tutorials
+- PyTorch inductor/triton kernels
+- JAX Pallas (Triton-based) kernels
+- FlashAttention implementations
+- Custom ML kernel repositories (xformers, etc.)
 
 **Curation criteria for repos**:
 - Maintained (commits in last 6 months)

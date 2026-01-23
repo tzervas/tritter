@@ -20,8 +20,18 @@ import argparse
 import hashlib
 import json
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+# Import quality gates - these integrate security and quality analysis
+try:
+    from security_scanner import SecurityScanner, ScanResult
+    from quality_analyzer import QualityAnalyzer, QualityResult
+    QUALITY_GATES_AVAILABLE = True
+except ImportError:
+    QUALITY_GATES_AVAILABLE = False
+    SecurityScanner = None  # type: ignore
+    QualityAnalyzer = None  # type: ignore
 
 
 @dataclass
@@ -32,13 +42,17 @@ class DatasetConfig:
     and make it easy to adjust quality thresholds.
 
     Attributes:
-        language: Programming language to filter (python, rust, javascript)
+        language: Programming language to filter (python, rust, javascript, triton)
         min_stars: Minimum GitHub stars for repository quality signal
         max_file_size_kb: Maximum file size to prevent minified/generated files
         min_lines: Minimum lines to filter out empty/trivial files
         max_lines: Maximum lines to filter out auto-generated files
         permissive_licenses: Tuple of license identifiers we can legally use
         output_format: File format for output (jsonl)
+        enable_security_scan: Whether to run security vulnerability scanning
+        enable_quality_scan: Whether to run code quality analysis
+        include_negative_examples: Whether to include poor code as negative examples
+        min_quality_score: Minimum quality score to accept as positive (0.0-1.0)
     """
 
     language: str = "python"
@@ -56,6 +70,10 @@ class DatasetConfig:
         "cc0-1.0",
     )
     output_format: str = "jsonl"
+    enable_security_scan: bool = True
+    enable_quality_scan: bool = True
+    include_negative_examples: bool = True
+    min_quality_score: float = 0.5
 
 
 def get_stack_v2_subsets() -> dict[str, dict]:
@@ -84,6 +102,12 @@ def get_stack_v2_subsets() -> dict[str, dict]:
             "size_gb": 87,
             "files": 25_000_000,
             "description": "JavaScript/TypeScript code",
+        },
+        "triton": {
+            "size_gb": 0.5,
+            "files": 50_000,
+            "description": "Triton GPU kernel code (curated from ML repos)",
+            "note": "Not in Stack v2; requires custom curation from ML frameworks",
         },
     }
 
@@ -177,18 +201,26 @@ def quality_filter(content: str, config: DatasetConfig) -> tuple[bool, str]:
     return True, "passed"
 
 
-def process_sample(sample: dict, config: DatasetConfig) -> dict | None:
-    """Process a single sample, applying filters.
+def process_sample(
+    sample: dict,
+    config: DatasetConfig,
+    security_scanner: "SecurityScanner | None" = None,
+    quality_analyzer: "QualityAnalyzer | None" = None,
+) -> dict | None:
+    """Process a single sample, applying filters and quality gates.
 
     Why: Single responsibility function that applies all filters to one sample.
-    Returns None if rejected, enabling efficient streaming processing.
+    Returns None if rejected (e.g., contains secrets), returns labeled sample
+    otherwise. Negative examples are explicitly marked with explanations.
 
     Args:
         sample: Raw sample from dataset with keys: content, license, max_stars_count
         config: Dataset configuration with filter criteria
+        security_scanner: Optional SecurityScanner for vulnerability detection
+        quality_analyzer: Optional QualityAnalyzer for anti-pattern detection
 
     Returns:
-        Processed sample dictionary or None if filtered out
+        Processed sample dictionary or None if filtered out (secrets = always reject)
     """
     content = sample.get("content", "")
     license_name = sample.get("license")
@@ -202,19 +234,76 @@ def process_sample(sample: dict, config: DatasetConfig) -> dict | None:
     if stars < config.min_stars:
         return None
 
-    # Quality filter
+    # Basic quality filter (size, auto-generated, etc.)
     passes, reason = quality_filter(content, config)
     if not passes:
         return None
 
-    return {
+    # Build base result
+    result = {
         "text": content,
         "language": config.language,
         "license": license_name,
         "stars": stars,
         "path": sample.get("path", ""),
         "repo": sample.get("repo_name", ""),
+        "quality_label": "positive",
+        "quality_score": 1.0,
+        "security_issues": [],
+        "anti_patterns": [],
+        "explanation": "",
     }
+
+    # Security scanning (if enabled)
+    if security_scanner and config.enable_security_scan:
+        scan_result = security_scanner.scan(content, config.language)
+
+        # REJECT samples with hardcoded secrets - never train on these
+        if scan_result.has_secrets:
+            return None
+
+        # Label security-vulnerable code as negative examples
+        if scan_result.security_issues:
+            result["security_issues"] = [
+                issue.issue_type for issue in scan_result.security_issues
+            ]
+            if scan_result.quality_label == "negative":
+                result["quality_label"] = "negative"
+                explanations = [
+                    f"Line {issue.line_number}: {issue.issue_type} - {issue.explanation}"
+                    for issue in scan_result.security_issues
+                ]
+                result["explanation"] = "\n".join(explanations)
+
+                # Don't include negative examples if disabled
+                if not config.include_negative_examples:
+                    return None
+
+    # Quality analysis (if enabled)
+    if quality_analyzer and config.enable_quality_scan:
+        quality_result = quality_analyzer.analyze(content, config.language)
+
+        result["quality_score"] = quality_result.quality_score
+        result["anti_patterns"] = [issue.issue_type for issue in quality_result.issues]
+
+        # Label poor quality code as negative
+        if quality_result.quality_score < config.min_quality_score:
+            result["quality_label"] = "negative"
+            if quality_result.issues:
+                quality_explanations = [
+                    f"{issue.location}: {issue.issue_type} - {issue.description}"
+                    for issue in quality_result.issues
+                ]
+                if result["explanation"]:
+                    result["explanation"] += "\n" + "\n".join(quality_explanations)
+                else:
+                    result["explanation"] = "\n".join(quality_explanations)
+
+            # Don't include negative examples if disabled
+            if not config.include_negative_examples:
+                return None
+
+    return result
 
 
 def stream_from_huggingface(language: str, split: str = "train") -> Iterator[dict]:
@@ -303,7 +392,7 @@ def main() -> None:
     parser.add_argument(
         "--language",
         default="python",
-        choices=["python", "rust", "javascript"],
+        choices=["python", "rust", "javascript", "triton"],
     )
     parser.add_argument("--output", type=Path, default=Path("data/curated"))
     parser.add_argument("--min-stars", type=int, default=100)
@@ -318,6 +407,27 @@ def main() -> None:
         action="store_true",
         help="Count samples without saving",
     )
+    parser.add_argument(
+        "--no-security-scan",
+        action="store_true",
+        help="Disable security vulnerability scanning",
+    )
+    parser.add_argument(
+        "--no-quality-scan",
+        action="store_true",
+        help="Disable code quality analysis",
+    )
+    parser.add_argument(
+        "--positive-only",
+        action="store_true",
+        help="Only include positive examples (no negative/educational)",
+    )
+    parser.add_argument(
+        "--min-quality-score",
+        type=float,
+        default=0.5,
+        help="Minimum quality score for positive examples (0.0-1.0)",
+    )
     args = parser.parse_args()
 
     if args.list_subsets:
@@ -327,21 +437,45 @@ def main() -> None:
             print(f"    Size: {info['size_gb']} GB")
             print(f"    Files: {info['files']:,}")
             print(f"    Description: {info['description']}")
+            if "note" in info:
+                print(f"    Note: {info['note']}")
         return
 
     print(f"Curating {args.language} dataset...")
     print(f"  Min stars: {args.min_stars}")
     print(f"  Output: {args.output}")
+    print(f"  Security scan: {'disabled' if args.no_security_scan else 'enabled'}")
+    print(f"  Quality scan: {'disabled' if args.no_quality_scan else 'enabled'}")
+    print(f"  Include negatives: {'no' if args.positive_only else 'yes'}")
 
     config = DatasetConfig(
         language=args.language,
         min_stars=args.min_stars,
+        enable_security_scan=not args.no_security_scan,
+        enable_quality_scan=not args.no_quality_scan,
+        include_negative_examples=not args.positive_only,
+        min_quality_score=args.min_quality_score,
     )
+
+    # Initialize quality gates if available and enabled
+    security_scanner = None
+    quality_analyzer = None
+
+    if QUALITY_GATES_AVAILABLE:
+        if config.enable_security_scan:
+            security_scanner = SecurityScanner()
+            print("  Security scanner: initialized")
+        if config.enable_quality_scan:
+            quality_analyzer = QualityAnalyzer()
+            print("  Quality analyzer: initialized")
+    else:
+        if config.enable_security_scan or config.enable_quality_scan:
+            print("  Warning: Quality gates not available. Run from scripts/ directory.")
 
     # Process stream
     def processed_stream() -> Iterator[dict]:
         for sample in stream_from_huggingface(args.language):
-            processed = process_sample(sample, config)
+            processed = process_sample(sample, config, security_scanner, quality_analyzer)
             if processed:
                 yield processed
 
