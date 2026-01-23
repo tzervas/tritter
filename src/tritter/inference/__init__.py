@@ -55,6 +55,7 @@ TODO: Implement after:
 """
 
 from tritter.inference.memory_manager import MemoryAllocation, MemoryManager
+from tritter.inference.transfer_engine import TransferEngine, pin_model_weights
 
 
 class KVCacheManager:
@@ -138,7 +139,7 @@ class InferenceEngine:
         stream_generate(): Streaming generation with token callbacks
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: object, **kwargs: object) -> None:
         raise NotImplementedError(
             "InferenceEngine is not implemented yet. "
             "This is a stub placeholder; see the module docstring for details."
@@ -151,4 +152,6 @@ __all__ = [
     "EmbeddingRounder",
     "MemoryManager",
     "MemoryAllocation",
+    "TransferEngine",
+    "pin_model_weights",
 ]
