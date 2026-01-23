@@ -1,6 +1,8 @@
 """Training utilities and helpers for embedding-prediction transformer.
 
-CURRENT STATUS: Stub module - Trainer class not yet implemented.
+CURRENT STATUS: Basic token-prediction trainer implemented. Embedding prediction
+training (Coconut/LCM-style) planned for future curriculum learning phase.
+Data loading utilities (CodeDataset, StreamingCodeDataset) are implemented.
 
 Why this module exists:
 Training an embedding-prediction model differs fundamentally from standard token-prediction
@@ -13,29 +15,41 @@ embedding space and must learn to:
 4. Handle BitNet quantization with straight-through estimator (STE) gradients
 5. Train multimodal early fusion with modality-balanced sampling
 
-Planned components:
-- Trainer: Main training loop with embedding prediction loss
+Implemented components:
+- Trainer: Basic training loop with token prediction (cross-entropy loss)
+- TrainingConfig: Training hyperparameter configuration
+- CodeDataset: Dataset for loading code files from disk
+- StreamingCodeDataset: Streaming dataset for large JSONL collections
+- DataConfig: Configuration for data loading hyperparameters
+- collate_fn: Dynamic padding collation function
+- create_dataloader: DataLoader factory with appropriate settings
+
+Planned components (stubs):
 - EmbeddingPredictionLoss: Custom loss function for continuous space
-- BitNetOptimizer: Optimizer wrapper handling ternary weight updates
 - CurriculumScheduler: Gradual transition from token to embedding prediction
 - MultimodalDataLoader: Balanced sampling across text/code/image/audio
-- MemoryOptimizer: Gradient checkpointing + mixed precision for 16GB VRAM
 
 Architecture dependencies:
 - Requires TritterModel with embedding output head (current has logits head)
 - Needs EmbeddingRounder for converting predicted embeddings → tokens
 - Integrates with Nanotron framework for distributed training (per project-plan.md)
 
-Why not implemented yet:
-Core architecture (model, tokenization, quantization) must stabilize first. Training loop
-depends on model API, and embedding prediction training requires careful curriculum design
-to avoid collapse into degenerate solutions (all embeddings → same point).
-
-TODO: Implement after validating that:
-1. Model forward pass works end-to-end
-2. Embedding space is well-structured (via probing tasks)
-3. Continuous-to-discrete mapping strategy is chosen (KNN vs VQ vs LRD)
+Implementation strategy:
+Phase 1 (current): Standard token prediction training to validate architecture
+Phase 2 (future): Add embedding prediction with curriculum learning after:
+  1. Model forward pass works end-to-end
+  2. Embedding space is well-structured (via probing tasks)
+  3. Continuous-to-discrete mapping strategy is chosen (KNN vs VQ vs LRD)
 """
+
+from tritter.training.data import (
+    CodeDataset,
+    DataConfig,
+    StreamingCodeDataset,
+    collate_fn,
+    create_dataloader,
+)
+from tritter.training.trainer import Trainer, TrainingConfig
 
 
 class EmbeddingPredictionLoss:
@@ -89,40 +103,20 @@ class CurriculumScheduler:
         )
 
 
-class Trainer:
-    """Stub Trainer class for embedding-prediction transformer training.
+# Export data loading utilities and trainer
+__all__ = [
+    # Data loading
+    "CodeDataset",
+    "StreamingCodeDataset",
+    "DataConfig",
+    "collate_fn",
+    "create_dataloader",
+    # Training
+    "Trainer",
+    "TrainingConfig",
+]
 
-    This placeholder documents the planned interface. Implementation depends on:
-    1. Stable model architecture (TritterModel with embedding output option)
-    2. Validated quantization (BitNet STE gradient flow confirmed)
-    3. Chosen training framework (Nanotron for distributed, or custom)
-
-    Planned interface:
-        trainer = Trainer(
-            model=model,
-            config=TrainingConfig(...),
-            loss_fn=EmbeddingPredictionLoss(),
-            curriculum=CurriculumScheduler(),
-        )
-        trainer.train(train_dataloader, eval_dataloader)
-
-    Key methods (planned):
-        train(): Main training loop with checkpoint saving
-        evaluate(): Run evaluation with embedding and token metrics
-        save_checkpoint(): Save model + optimizer + curriculum state
-        load_checkpoint(): Resume training from checkpoint
-    """
-
-    def __init__(self, *args, **kwargs) -> None:
-        raise NotImplementedError(
-            "Trainer is not yet implemented. See src/tritter/training/__init__.py "
-            "for implementation plan and TODOs."
-        )
-
-
-# TODO: Phase 6 - Export Trainer, EmbeddingPredictionLoss, and CurriculumScheduler
+# TODO: Phase 6 - Export EmbeddingPredictionLoss and CurriculumScheduler
 # These classes are stub implementations that raise NotImplementedError.
 # Once they are fully implemented with working functionality, add them to __all__.
-# Implementation requires: (1) stable model architecture, (2) validated quantization,
-# (3) chosen training framework (Nanotron per project-plan.md)
-__all__: list[str] = []
+# Implementation requires embedding-prediction training strategy validation.
