@@ -211,6 +211,18 @@ class TritterConfig:
             assert self.num_sink_tokens is not None and self.num_sink_tokens > 0, (
                 f"num_sink_tokens must be > 0 when use_attention_sinks=True, got {self.num_sink_tokens}"
             )
+
+        # Validate minimum vocab_size for byte-level encoding
+        # Why: The _encode_text method in MultiModalTokenizer uses offset 8 for special tokens
+        # (PAD, BOS, EOS, UNK, etc.) plus 256 byte values (0x00-0xFF). This minimum ensures
+        # every byte can be represented without overflow, which is critical for the
+        # embedding-prediction paradigm where continuous embeddings must map to discrete tokens.
+        min_vocab_size = 264  # 8 special tokens + 256 byte values
+        assert self.vocab_size >= min_vocab_size, (
+            f"vocab_size ({self.vocab_size}) must be >= {min_vocab_size} "
+            f"(8 special tokens + 256 byte values for byte-level encoding)"
+        )
+
     @property
     def head_dim(self) -> int:
         """Dimension of each attention head.

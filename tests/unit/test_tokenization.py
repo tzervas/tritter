@@ -97,7 +97,7 @@ class TestMultiModalTokenizer:
             tokenizer.special_tokens[tokenizer.EOS_TOKEN],
             tokenizer.special_tokens[tokenizer.TEXT_PREFIX],
         }
-        
+
         for special_id in special_ids_to_check:
             assert special_id not in tokens, f"Special token {special_id} should not be present"
 
@@ -168,7 +168,7 @@ class TestUnifiedEmbedding:
         token_ids = torch.tensor([[1, 2, 3, 0, 0], [4, 5, 0, 0, 0]])
 
         output = embedding(token_ids)
-        
+
         # Compute loss and backward pass
         loss = output.sum()
         loss.backward()
@@ -177,7 +177,7 @@ class TestUnifiedEmbedding:
         # padding_idx prevents gradient updates, not zero initialization
         assert embedding.embedding.weight.grad is not None
         padding_grad = embedding.embedding.weight.grad[0]  # Gradient for padding token (index 0)
-        
+
         # Padding token gradient should be zero (no updates during backprop)
         assert torch.allclose(padding_grad, torch.zeros_like(padding_grad)), (
             "Padding token should not receive gradient updates when padding_idx=0"
