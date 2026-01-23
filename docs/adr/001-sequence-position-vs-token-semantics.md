@@ -163,7 +163,7 @@ class TritterConfig:
     from O(max_position_embeddings) to O(sliding_window_size).
 
     4K positions chosen to balance local context with memory efficiency:
-    - 4K × 32 layers × 32 heads × 128 head_dim × 2 (K+V) × 0.5 bytes (INT4) ≈ 8.4 GB
+    - 4K × 32 layers × 32 heads × 128 head_dim × 2 (K+V) × 0.5 bytes (INT4) ≈ 0.54 GB
     - Leaves 7.6 GB headroom in 16GB budget for model weights, activations, vision encoder
 
     Set to None to disable sliding window (use full attention up to max_position_embeddings).
