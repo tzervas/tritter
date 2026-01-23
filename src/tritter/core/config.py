@@ -223,6 +223,7 @@ class TritterConfig:
             f"(8 special tokens + 256 byte values for byte-level encoding)"
         )
 
+
     @property
     def head_dim(self) -> int:
         """Dimension of each attention head.
