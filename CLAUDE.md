@@ -54,6 +54,10 @@ When writing model or tokenization code, docstrings **must** explicitly acknowle
 | **TritterAttention** | [architecture.py](src/tritter/models/architecture.py) | Multi-head attention with QK-Norm |
 | **TritterMLP** | [architecture.py](src/tritter/models/architecture.py) | FFN with **Squared ReLU** (required for BitNet) |
 | **TritterLayer** | [architecture.py](src/tritter/models/architecture.py) | Post-FFN LayerNorm (Chameleon-style) |
+| **StreamingInferenceEngine** | [layer_streaming.py](src/tritter/inference/layer_streaming.py) | Progressive layer loading for large models |
+| **LayerLoader** | [layer_streaming.py](src/tritter/inference/layer_streaming.py) | Layer group loading/eviction with double buffering |
+| **MemoryManager** | [memory_manager.py](src/tritter/inference/memory_manager.py) | GPU memory tracking and budget enforcement |
+| **TransferEngine** | [transfer_engine.py](src/tritter/inference/transfer_engine.py) | Async CPU→GPU transfers with CUDA streams |
 
 ### Critical Architecture Decisions
 
@@ -61,6 +65,32 @@ When writing model or tokenization code, docstrings **must** explicitly acknowle
 2. **QK-Norm** - Query-key normalization prevents attention score explosion
 3. **Post-FFN LayerNorm** - Chameleon-style: normalize after MLP residual, not before
 4. **FlashAttention** - Use `is_causal=True` (not manual mask) for optimal kernel dispatch
+5. **Progressive Layer Loading** - Stream layer groups through GPU for unbounded model size
+
+### Progressive Layer Loading
+
+Run models larger than VRAM by streaming layer groups:
+
+```python
+config = TritterConfig(
+    model_size="7B",
+    use_layer_streaming=True,     # Enable layer streaming
+    layer_group_size=4,           # 4 layers per group
+    gpu_memory_budget_gb=14.0,    # Reserve 2GB headroom
+    prefetch_next_group=True,     # Double buffer for latency hiding
+)
+
+engine = StreamingInferenceEngine(model, config)
+output = engine.generate(input_ids, max_new_tokens=100)
+```
+
+How it works:
+1. Model weights stay on CPU
+2. LayerLoader moves layer groups to GPU on demand
+3. TransferEngine uses async CUDA streams for compute/transfer overlap
+4. MemoryManager enforces budget to prevent OOM
+
+See [ADR-002](docs/adr/002-progressive-layer-loading.md) and [SPEC-006](docs/specs/SPEC-006-progressive-layer-loading.md).
 
 ### Memory Budget (RTX 5080 16GB)
 
@@ -74,13 +104,21 @@ When writing model or tokenization code, docstrings **must** explicitly acknowle
 
 ## Implementation Roadmap
 
-### Attention Architecture Evolution
+### Completed
+- FlashAttention with `is_causal=True`
+- Progressive layer loading (LayerLoader, StreamingInferenceEngine)
+- Memory management (MemoryManager, TransferEngine)
+- Attention mode config field
 
-1. **Current**: Basic SDPA with manual causal mask
-2. **Immediate Fix**: Use `is_causal=True` for FlashAttention-2 optimization
-3. **Short-term**: FlexAttention for dynamic masking (document boundaries, sliding window)
-4. **Medium-term**: Attention modes (causal, bidirectional, prefix-lm, embedding)
-5. **Long-term**: Hybrid Mamba-2/Transformer (9:1 ratio per IBM Granite 4.0)
+### In Progress
+- Training loop with BitNet QAT
+- Dataset curation (Python, Rust, Triton)
+
+### Planned
+- Sliding window attention
+- FlexAttention mask primitives
+- INT4 KV-cache quantization
+- Multimodal encoders (SigLIP, EnCodec)
 
 ### Attention Modes (Planned)
 
@@ -156,7 +194,9 @@ From [considerations.md](docs/considerations.md):
 
 | Document | Purpose |
 |----------|---------|
+| [ROADMAP.md](docs/ROADMAP.md) | Current status and planned work |
 | [project-plan.md](docs/project-plan.md) | Full technical blueprint |
+| [ADR-002](docs/adr/002-progressive-layer-loading.md) | Progressive layer loading decision |
+| [SPEC-006](docs/specs/SPEC-006-progressive-layer-loading.md) | Layer streaming implementation spec |
 | [considerations.md](docs/considerations.md) | Research on transformer alternatives |
 | [clean-datasets.md](docs/clean-datasets.md) | Training data strategy |
-| [tritter-comprehensive-implementation-plan.md](docs/tritter-comprehensive-implementation-plan.md) | Attention architecture roadmap |

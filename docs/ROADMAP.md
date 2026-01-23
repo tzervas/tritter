@@ -1,145 +1,146 @@
 # Tritter Development Roadmap
 
-## Current State (Phase 1 Complete)
+## Current State
 
-- [x] Core transformer architecture with BitNet 1.58-bit quantization
-- [x] QK-Norm, Squared ReLU, post-FFN LayerNorm (Chameleon-compliant)
-- [x] TernaryWeight with STE gradient flow
-- [x] Multimodal tokenization (byte-level encoding)
-- [x] 39 unit tests passing
-- [x] Development standards and documentation
+**Tests**: 102 passing
+**Branch**: develop
+
+### Completed
+
+- Core transformer with BitNet 1.58-bit quantization
+- QK-Norm, Squared ReLU, post-FFN LayerNorm
+- TernaryWeight with STE gradient flow
+- Multimodal byte-level tokenization
+- FlashAttention with `is_causal=True`
+- Progressive layer loading (unbounded model size)
+- Streaming inference engine
+
+### In Progress
+
+- Training loop with BitNet QAT
+- Dataset curation (Python, Rust, Triton)
 
 ---
 
-## Phase 2: Attention Optimization (Current)
+## Architecture
 
-### 2.1 FlashAttention Fix (Priority: Critical)
-- [ ] Replace manual causal mask with `is_causal=True`
-- [ ] Benchmark memory/speed improvement on RTX 5080
-- [ ] Update tests to verify kernel dispatch
+### What Works
 
-### 2.2 Attention Mode Configuration
-- [ ] Add `attention_mode` config: causal, bidirectional, prefix_lm, embedding
-- [ ] Add `sliding_window_size` config (default 4096)
-- [ ] Add `use_attention_sinks` for StreamingLLM
+```
+src/tritter/
+├── core/config.py           # TritterConfig - all hyperparameters
+├── models/architecture.py   # TritterModel, TritterLayer, TritterAttention
+├── quantization/bitnet.py   # TernaryWeight with STE
+├── tokenization/multimodal.py
+└── inference/
+    ├── layer_streaming.py   # LayerLoader, StreamingInferenceEngine
+    ├── memory_manager.py    # GPU memory tracking
+    └── transfer_engine.py   # Async H2D transfers
+```
 
-### 2.3 FlexAttention Integration
-- [ ] Create `src/tritter/models/flex_attention.py`
-- [ ] Implement mask primitives: causal, sliding_window, document, streamingllm
-- [ ] Add BlockMask caching for efficiency
+### Progressive Layer Loading
+
+Run 70B models on 16GB VRAM:
+
+```python
+from tritter import TritterConfig, TritterModel
+from tritter.inference import StreamingInferenceEngine
+
+config = TritterConfig(
+    model_size="7B",
+    use_layer_streaming=True,
+    layer_group_size=4,
+    gpu_memory_budget_gb=14.0,
+    prefetch_next_group=True,
+)
+
+model = TritterModel(config)
+engine = StreamingInferenceEngine(model, config)
+output = engine.generate(input_ids, max_new_tokens=100)
+```
+
+Layers stream from CPU to GPU in groups. Double buffering overlaps transfer with compute. See [SPEC-006](specs/SPEC-006-progressive-layer-loading.md).
+
+---
+
+## Phase 2: Attention Modes
+
+| Status | Task |
+|--------|------|
+| ✅ | FlashAttention `is_causal=True` |
+| ✅ | `attention_mode` config field |
+| ⏳ | Sliding window attention |
+| ⏳ | FlexAttention mask primitives |
+
+See [SPEC-001](specs/SPEC-001-flexattention.md).
 
 ---
 
 ## Phase 3: Memory Optimization
 
-### 3.1 KV-Cache Quantization
-- [ ] Implement INT4 KV-cache quantization
-- [ ] Target: 128K context in ~8GB
-- [ ] Integrate with sliding window attention
+| Status | Task |
+|--------|------|
+| ✅ | MemoryManager with budget enforcement |
+| ✅ | Async transfer engine |
+| ⏳ | INT4 KV-cache quantization |
+| ⏳ | 128K context verification |
 
-### 3.2 Memory Profiling
-- [ ] Add memory budget verification tests
-- [ ] Profile peak memory at various context lengths
-- [ ] Document RTX 5080 optimization settings
-
----
-
-## Phase 4: Multimodal Integration
-
-### 4.1 Vision Encoder
-- [ ] Integrate SigLIP-B/16 (93M params)
-- [ ] Implement pixel shuffle (factor 4) for token reduction
-- [ ] VQ-VAE image tokenization (256-512 tokens/image)
-
-### 4.2 Audio Tokenization
-- [ ] Integrate EnCodec/SpeechTokenizer
-- [ ] Semantic/acoustic disentanglement
-- [ ] Unified vocabulary integration
-
-### 4.3 Unified Embedding Space
-- [ ] Early fusion architecture (Chameleon-style)
-- [ ] Combined vocabulary: ~100K tokens
-- [ ] Cross-modal attention patterns
+See [SPEC-005](specs/SPEC-005-memory-optimization.md).
 
 ---
 
-## Phase 5: Embedding Prediction Paradigm
+## Phase 4: Multimodal
 
-### 5.1 Coconut-Style Continuous Thought
-- [ ] Hidden state → next embedding feedback loop
-- [ ] Latent space reasoning
-- [ ] KNN/VQ rounding for discrete output
-
-### 5.2 Training Adaptation
-- [ ] Curriculum-based training for embedding prediction
-- [ ] Dual-mode: token prediction (training) + embedding prediction (inference)
-- [ ] Fallback to token prediction where continuous degrades
+| Status | Task |
+|--------|------|
+| ⏳ | SigLIP-B/16 vision encoder |
+| ⏳ | VQ-VAE image tokenization |
+| ⏳ | EnCodec audio tokenization |
+| ⏳ | Unified embedding space |
 
 ---
 
-## Phase 6: Training Pipeline
+## Phase 5: Embedding Prediction
 
-### 6.1 Data Preparation
-- [ ] Stack v2 Python/Rust processing pipeline
-- [ ] MinHash LSH deduplication
-- [ ] Quality filtering (line length, alphabetic ratio)
+| Status | Task |
+|--------|------|
+| ⏳ | Hidden state feedback loop |
+| ⏳ | KNN/VQ rounding |
+| ⏳ | Curriculum training |
 
-### 6.2 Pretraining
-- [ ] 1-2T tokens on Stack-Edu (Python 45%, Rust 20%)
-- [ ] BitNet QAT via Nanotron
-- [ ] Checkpoint management
-
-### 6.3 Instruction Tuning
-- [ ] OSS-Instruct (75K examples)
-- [ ] Prefix-LM attention pattern
-- [ ] 2-5M instruction samples
+See [SPEC-003](specs/SPEC-003-embedding-prediction.md).
 
 ---
 
-## Phase 7: Hybrid Architecture (Research)
+## Phase 6: Training
 
-### 7.1 Mamba-2 Evaluation
-- [ ] Benchmark Mamba-2 blocks
-- [ ] Test 9:1 Mamba:Transformer ratio (IBM Granite style)
-- [ ] Memory/quality tradeoff analysis
-
-### 7.2 Advanced Architectures
-- [ ] Gated DeltaNet evaluation
-- [ ] URM-style recurrent refinement
-- [ ] Latent recurrent depth
+| Status | Task |
+|--------|------|
+| ⏳ | BitNet QAT trainer |
+| ⏳ | Stack v2 processing |
+| ⏳ | MinHash deduplication |
+| ⏳ | Checkpoint management |
 
 ---
 
-## Memory Budget Reference (RTX 5080 16GB)
+## Memory Budget (RTX 5080 16GB)
 
-| Component | Memory |
-|-----------|--------|
+| Component | Size |
+|-----------|------|
 | 7B BitNet weights | 1.4 GB |
-| Vision encoder (SigLIP-B) | 0.4 GB |
-| INT4 KV-cache (128K, 4K window) | ~8.4 GB |
-| Activations + overhead | ~2 GB |
-| **Total** | **~12.2 GB** |
+| KV-cache (128K, INT4) | 8-10 GB |
+| Layer group buffer | 0.4 GB |
+| Activations | 2 GB |
+| **Total** | ~12-14 GB |
 
 ---
 
-## Task Complexity Classification
+## Open Issues
 
-### Opus-tier (Large Planning)
-- Architecture design decisions
-- Multi-phase implementation planning
-- Research synthesis and evaluation
-
-### Sonnet-tier (Medium Scope)
-- Module implementation
-- Test suite development
-- Documentation writing
-
-### Haiku-tier (Focused Execution)
-- Bug fixes
-- Config changes
-- Small refactors
-- Code formatting
+- #6: Sliding window not implemented
+- #19: RTX 5080 FP8 optimizations
+- #20-25: Test improvements
 
 ---
 
-*Last Updated: 2026-01-21*
+*Last Updated: 2026-01-23*
