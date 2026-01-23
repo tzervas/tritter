@@ -26,6 +26,7 @@ Each ADR follows this structure:
 ### Active
 
 - [ADR-001: Sequence Position vs Token Semantics](./001-sequence-position-vs-token-semantics.md) - Defines how we measure sequence length in embedding-prediction models
+- [ADR-002: Progressive Layer Loading](./002-progressive-layer-loading.md) - Enables unbounded model size via layer streaming
 
 ### Template
 
