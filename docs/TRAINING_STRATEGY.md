@@ -8,6 +8,21 @@
 
 **Approach**: Quality over quantity. Curated datasets from high-quality sources. Constitutional principles baked into training data, not bolted on after.
 
+### Personality Basin
+
+The persona is implemented as a **personality basin**—a stable attractor in behavior space where the model naturally resides. Unlike RLHF which creates surface-level constraints that models can learn to circumvent, a personality basin emerges from consistent training data that shapes the model's underlying representations.
+
+**Properties of a well-formed personality basin**:
+1. **Stability**: Small perturbations in input don't cause large swings in persona
+2. **Consistency**: The model responds similarly to equivalent prompts regardless of phrasing
+3. **Robustness**: Adversarial prompts fail to dislodge the persona because it's not a constraint—it's the model's actual behavior
+4. **Naturalness**: Responses feel coherent, not artificially constrained
+
+The basin is formed through:
+- **Consistent training signal**: All data exemplifies the target persona
+- **Contrastive examples**: Negative examples show what the persona is NOT
+- **No conflicting personas**: No roleplay, no multi-persona mixing in data
+
 ---
 
 ## Persona Definition
