@@ -54,6 +54,8 @@ TODO: Implement after:
 3. Choose primary deployment target (vLLM vs TensorRT vs custom)
 """
 
+from tritter.inference.memory_manager import MemoryAllocation, MemoryManager
+
 
 class KVCacheManager:
     """Stub KV-cache manager for INT4 quantized key-value storage.
@@ -143,4 +145,10 @@ class InferenceEngine:
         )
 
 
-__all__ = ["InferenceEngine", "KVCacheManager", "EmbeddingRounder"]
+__all__ = [
+    "InferenceEngine",
+    "KVCacheManager",
+    "EmbeddingRounder",
+    "MemoryManager",
+    "MemoryAllocation",
+]
