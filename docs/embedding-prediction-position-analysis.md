@@ -178,7 +178,7 @@ Why: Bounds KV-cache by limiting attention to the most recent W positions.
 Position i can attend to positions max(0, i - W) through i.
 
 This reduces KV-cache from O(max_position_embeddings) to O(sliding_window_size):
-- 4K × 32 layers × 32 heads × 128 head_dim × 2 × 0.5 bytes ≈ 8.4 GB
+- 4K × 32 layers × 32 heads × 128 head_dim × 2 × 0.5 bytes ≈ 0.54 GB
 """
 ```
 
