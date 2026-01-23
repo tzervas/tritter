@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Tests**: 102 passing
+**Tests**: 84+ passing (core modules)
 **Branch**: develop
 
 ### Completed
@@ -14,11 +14,16 @@
 - FlashAttention with `is_causal=True`
 - Progressive layer loading (unbounded model size)
 - Streaming inference engine
+- Training loop with BitNet QAT (Trainer, TrainingConfig)
+- Dataset curation pipeline (Python, Rust, Triton)
+- Quality gates: security scanner, quality analyzer
+- SPEC-007: Dataset quality gates specification
 
 ### In Progress
 
-- Training loop with BitNet QAT
-- Dataset curation (Python, Rust, Triton)
+- BitNet-2B weight validation
+- Triton data source curation
+- Model validation with pretrained weights
 
 ---
 
@@ -116,10 +121,15 @@ See [SPEC-003](specs/SPEC-003-embedding-prediction.md).
 
 | Status | Task |
 |--------|------|
-| ⏳ | BitNet QAT trainer |
-| ⏳ | Stack v2 processing |
-| ⏳ | MinHash deduplication |
-| ⏳ | Checkpoint management |
+| ✅ | BitNet QAT trainer (Trainer, TrainingConfig) |
+| ✅ | Dataset curation pipeline |
+| ✅ | Quality gates (security, quality) |
+| ✅ | Hash-based deduplication |
+| ⏳ | BitNet-2B weight validation |
+| ⏳ | MinHash near-duplicate detection |
+| ⏳ | Triton kernel data sources |
+
+See [TRAINING_STRATEGY.md](TRAINING_STRATEGY.md) and [SPEC-007](specs/SPEC-007-dataset-quality-gates.md).
 
 ---
 
