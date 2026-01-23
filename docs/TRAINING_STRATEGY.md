@@ -23,6 +23,28 @@ The basin is formed through:
 - **Contrastive examples**: Negative examples show what the persona is NOT
 - **No conflicting personas**: No roleplay, no multi-persona mixing in data
 
+### Contrastive Training Philosophy
+
+**Principle**: Safety by design, from the dataset up.
+
+The shogoth problem emerges because models are trained on undifferentiated data without learning what's *wrong*. RLHF attempts to fix this post-hoc, but the problematic patterns are already encoded. Our approach prevents bad patterns from being learned as "normal" in the first place.
+
+**Negative examples with explanations**:
+- Don't just label bad code as "negative"—explain WHY it's bad
+- `eval() is dangerous because it executes arbitrary code` teaches reasoning, not just pattern matching
+- The model should understand the principle, not just memorize the pattern
+
+**Code-specific application** (Phase 1):
+- Positive: High-quality code, good patterns, clean architecture
+- Negative: Anti-patterns, security vulnerabilities, code smells—each with explanation
+- Goal: Model intuitively detects issues and can fix bad code without changing project intent
+
+**Developmental psychology parallel**:
+Children don't learn right from wrong by only seeing good examples. They need explicit "this is wrong because X" explanations. Same principle applies here.
+
+**Future consideration: Emotive continuity**
+Human emotions serve as rapid evaluation heuristics ("this feels wrong"). Encoding analogous signals in embeddings might help develop generalizable intuitions about quality/safety. Deferred to future phase after baseline validation.
+
 ---
 
 ## Persona Definition
