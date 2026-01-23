@@ -54,6 +54,7 @@ TODO: Implement after:
 3. Choose primary deployment target (vLLM vs TensorRT vs custom)
 """
 
+from tritter.inference.transfer_engine import TransferEngine, pin_model_weights
 
 class KVCacheManager:
     """Stub KV-cache manager for INT4 quantized key-value storage.
@@ -136,11 +137,17 @@ class InferenceEngine:
         stream_generate(): Streaming generation with token callbacks
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: object, **kwargs: object) -> None:
         raise NotImplementedError(
             "InferenceEngine is not implemented yet. "
             "This is a stub placeholder; see the module docstring for details."
         )
 
 
-__all__ = ["InferenceEngine", "KVCacheManager", "EmbeddingRounder"]
+__all__ = [
+    "InferenceEngine",
+    "KVCacheManager",
+    "EmbeddingRounder",
+    "TransferEngine",
+    "pin_model_weights",
+]
