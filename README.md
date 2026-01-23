@@ -4,7 +4,7 @@ A multimodal transformer research project combining BitNet 1.58-bit ternary quan
 
 ## Project Status
 
-**Current Status**: Early Development (v0.1.0)
+**Current Status**: Active Development (v0.2.0)
 
 | Component | Status |
 |-----------|--------|
@@ -12,8 +12,11 @@ A multimodal transformer research project combining BitNet 1.58-bit ternary quan
 | Model architecture (attention, MLP, layers) | Implemented |
 | BitNet 1.58-bit quantization | Implemented |
 | Multimodal tokenization | Implemented |
-| Training loop | Stub (not implemented) |
-| Inference engine | Stub (not implemented) |
+| Training loop (BitNet QAT) | Implemented |
+| Inference engine (streaming) | Implemented |
+| Progressive layer loading | Implemented |
+| Dataset curation pipeline | Implemented |
+| Quality gates (security, quality) | Implemented |
 | Development tooling | Implemented |
 
 ## Overview
