@@ -109,10 +109,13 @@ See [ADR-002](docs/adr/002-progressive-layer-loading.md) and [SPEC-006](docs/spe
 - Progressive layer loading (LayerLoader, StreamingInferenceEngine)
 - Memory management (MemoryManager, TransferEngine)
 - Attention mode config field
+- Training loop with BitNet QAT (Trainer, TrainingConfig)
+- Dataset curation pipeline (Python, Rust, Triton)
+- Quality gates (security scanner, quality analyzer)
 
 ### In Progress
-- Training loop with BitNet QAT
-- Dataset curation (Python, Rust, Triton)
+- BitNet-2B weight validation (validate_bitnet_weights.py)
+- Triton data source curation
 
 ### Planned
 - Sliding window attention
@@ -173,13 +176,25 @@ See [API_CONVENTIONS.md](docs/API_CONVENTIONS.md) for interface schemas:
 
 ## Training Data Strategy
 
-From [clean-datasets.md](docs/clean-datasets.md):
+From [TRAINING_STRATEGY.md](docs/TRAINING_STRATEGY.md):
 
-| Phase | Tokens | Primary Sources |
-|-------|--------|-----------------|
-| Base pretraining | 1-2T | Stack-Edu Python (45%), Rust (20%) |
-| Domain continued | 200-500B | ML frameworks, papers, Kaggle |
-| Instruction tuning | 2-5M samples | OSS-Instruct, Glaive |
+**Persona**: Single-persona AI assistant specialized in software/AI engineering (Python, Rust, Triton).
+
+**Data mix** (targeting ~100B tokens initially):
+| Source | Weight | Quality Signal |
+|--------|--------|----------------|
+| Stack v2 Python (deduped) | 35% | Permissive licenses, >100 stars |
+| Stack v2 Rust (deduped) | 20% | Same criteria |
+| Triton GPU kernels | 10% | From PyTorch, JAX, ML repos |
+| High-quality repos | 20% | Curated, well-documented |
+| Technical docs/papers | 10% | arXiv CS, official docs |
+| Persona conversations | 5% | Synthetic, Constitutional AI |
+
+**Quality Gates** (from [SPEC-007](docs/specs/SPEC-007-dataset-quality-gates.md)):
+- Hardcoded secrets: **ALWAYS REJECT**
+- Security vulnerabilities: Label as negative + explanation
+- Code quality issues: Label as negative + explanation
+- Contrastive learning: Model learns both good AND bad code
 
 ## Future Research Directions
 
@@ -195,8 +210,9 @@ From [considerations.md](docs/considerations.md):
 | Document | Purpose |
 |----------|---------|
 | [ROADMAP.md](docs/ROADMAP.md) | Current status and planned work |
-| [project-plan.md](docs/project-plan.md) | Full technical blueprint |
+| [TRAINING_STRATEGY.md](docs/TRAINING_STRATEGY.md) | Persona, data mix, alignment philosophy |
+| [SPEC-007](docs/specs/SPEC-007-dataset-quality-gates.md) | Security and quality gates for datasets |
 | [ADR-002](docs/adr/002-progressive-layer-loading.md) | Progressive layer loading decision |
 | [SPEC-006](docs/specs/SPEC-006-progressive-layer-loading.md) | Layer streaming implementation spec |
+| [project-plan.md](docs/project-plan.md) | Full technical blueprint |
 | [considerations.md](docs/considerations.md) | Research on transformer alternatives |
-| [clean-datasets.md](docs/clean-datasets.md) | Training data strategy |
