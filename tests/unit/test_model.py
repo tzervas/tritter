@@ -267,32 +267,39 @@ class TestTritterModel:
 
         With BitNet quantization and added normalization layers, parameter count is higher
         than basic models but should still be within reasonable bounds for the configuration.
+        This test uses bounds checking instead of weak assertions (> 0) to catch
+        initialization errors or missing components (fixes issue #22).
         """
         config = TritterConfig(
             hidden_size=64,
             num_heads=2,
             num_layers=1,
-            vocab_size=100,
+            vocab_size=500,  # Must be >= 264 for byte-level encoding
+            intermediate_size=256,  # 4x hidden_size (standard ratio)
             use_bitnet=True,
         )
         model = TritterModel(config)
 
         params = list(model.parameters())
-        assert len(params) > 0
+        assert len(params) > 0, "Model should have parameters"
 
         total_params = sum(p.numel() for p in params)
-        assert total_params > 0
 
         # Verify parameter count is within reasonable bounds for this config
-        # Expected components:
-        # - Embedding: 100 * 64 = 6,400
-        # - 1 Layer with attention (Q/K/V/O projections + QK-Norm): ~4 * 64^2 + 2*64 = 16,512
-        # - 1 Layer with MLP (gate/up/down projections): ~3 * 64 * 256 = 49,152
-        # - LayerNorms (input, post_mlp, final): 3 * 2 * 64 = 384
-        # - Scales for TernaryWeight layers: multiple of out_features
-        # - Output projection: 100 * 64 = 6,400
-        # Total expected: ~80K-200K params (accounting for TernaryWeight scales)
-        assert 50_000 < total_params < 2_000_000, (
-            f"Parameter count {total_params:,} outside expected range for test config. "
-            "Expected 50K-2M params for config with hidden_size=64, 1 layer, vocab_size=100"
+        # Expected components (all with BitNet TernaryWeight layers):
+        # - Embedding: vocab_size * hidden_size = 500 * 64 = 32,000
+        # - 1 Layer attention (Q/K/V/O projections): ~4 * 64^2 = 16,384
+        # - 1 Layer MLP (up/down projections): 2 * (64 * 256) = 32,768
+        # - QK-Norm LayerNorms (2 per attention): 2 * 2 * 64 = 256
+        # - Input/post-MLP LayerNorms: 2 * 2 * 64 = 256
+        # - Final LayerNorm: 2 * 64 = 128
+        # - TernaryWeight scales (1 per output feature): ~(64 + 64 + 64 + 64 + 256 + 64) = ~576
+        # - Output projection: vocab_size * hidden_size = 500 * 64 = 32,000
+        # Total expected: ~115K params
+        assert 80_000 < total_params < 200_000, (
+            f"Parameter count {total_params:,} outside expected range [80K, 200K] for test config. "
+            f"Config: hidden_size={config.hidden_size}, intermediate_size={config.intermediate_size}, "
+            f"vocab_size={config.vocab_size}, num_layers=1. "
+            "This bounds check catches initialization errors or missing components that "
+            "weak assertions like 'assert total_params > 0' would miss."
         )
