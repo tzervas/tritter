@@ -116,39 +116,23 @@ class TritterAttention(nn.Module):
         # Use FlashAttention if enabled (significantly faster and more memory efficient)
         if getattr(self.config, "use_flash_attention", False):
             # PyTorch's scaled_dot_product_attention uses FlashAttention when available
-            # Optimization: When attention_mask is None, use is_causal=True with attn_mask=None
-            # This allows FlashAttention-2 to use its optimized causal kernel (O(N) memory vs O(N²))
-            # instead of manually creating an O(N²) mask.
-            if attention_mask is None:
-                # Pure causal attention - use optimized kernel
-                attn_output = torch.nn.functional.scaled_dot_product_attention(
-                    query,
-                    key,
-                    value,
-                    attn_mask=None,
-                    dropout_p=0.0,
-                    is_causal=True,
-                )
-            else:
-                # Custom mask provided - combine with causal mask to preserve causality
-                # Create causal mask and combine with the provided mask
-                causal_mask = torch.triu(
-                    torch.full((seq_len, seq_len), float("-inf"), device=hidden_states.device),
-                    diagonal=1,
-                )
-                causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # (1, 1, seq_len, seq_len)
-
-                # Combine masks: addition of -inf masks takes the more restrictive constraint
-                combined_mask = attention_mask + causal_mask
-
-                attn_output = torch.nn.functional.scaled_dot_product_attention(
-                    query,
-                    key,
-                    value,
-                    attn_mask=combined_mask,
-                    dropout_p=0.0,
-                    is_causal=False,
-                )
+            # Why: Use is_causal=True for optimal kernel dispatch. This triggers FlashAttention-2's
+            # optimized causal kernel that:
+            # 1. Never materializes the O(N²) causal mask (critical for 128K context)
+            # 2. Uses fused attention computation (faster than separate ops)
+            # 3. Enables optimal tiling for long sequences
+            #
+            # Embedding-Prediction Context: Attention operates in continuous embedding space.
+            # The Q/K/V projections transform embeddings (not discrete tokens) to enable
+            # semantic similarity matching, consistent with the Coconut/LCM paradigm.
+            attn_output = torch.nn.functional.scaled_dot_product_attention(
+                query,  # (B, H, L, head_dim)
+                key,  # (B, H, L, head_dim)
+                value,  # (B, H, L, head_dim)
+                attn_mask=attention_mask,  # Optional mask (e.g., for padding)
+                dropout_p=0.0,
+                is_causal=True,  # Always use causal - FlashAttention handles this optimally
+            )  # -> (B, H, L, head_dim)
         else:
             # Fallback: Standard scaled dot-product attention
             # Always enforce causal masking
