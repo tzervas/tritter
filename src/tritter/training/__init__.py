@@ -49,7 +49,7 @@ from tritter.training.data import (
     collate_fn,
     create_dataloader,
 )
-from tritter.training.trainer import Trainer, TrainingConfig
+from tritter.training.trainer import Trainer, TrainingConfig, TrainingMetrics, TrainingProgress
 
 
 class EmbeddingPredictionLoss:
@@ -114,6 +114,8 @@ __all__ = [
     # Training
     "Trainer",
     "TrainingConfig",
+    "TrainingMetrics",
+    "TrainingProgress",
 ]
 
 # TODO: Phase 6 - Export EmbeddingPredictionLoss and CurriculumScheduler

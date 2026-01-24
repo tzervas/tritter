@@ -13,8 +13,12 @@ curriculum scheduling.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+import sys
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TextIO
 
 import torch
 import torch.nn as nn
@@ -24,6 +28,281 @@ from torch.utils.data import DataLoader
 
 from tritter.core.config import TritterConfig
 from tritter.models.architecture import TritterModel
+
+
+@dataclass
+class TrainingMetrics:
+    """Metrics tracked during training.
+
+    Why: Centralized metrics tracking enables consistent logging and reporting.
+    """
+
+    step: int = 0
+    epoch: int = 0
+    loss: float = 0.0
+    lr: float = 0.0
+    tokens_per_sec: float = 0.0
+    gpu_memory_gb: float = 0.0
+    grad_norm: float = 0.0
+
+
+class TrainingProgress:
+    """Visual progress tracking for training loop.
+
+    Why: Provides clear visual feedback on training status, progress, timing,
+    and resource usage. Essential for monitoring long-running training jobs
+    to distinguish between stuck loops and normal training.
+
+    Attributes:
+        total_steps: Maximum training steps
+        log_steps: Steps between log updates
+        start_time: Training start timestamp
+        current_status: Current training phase description
+
+    Example:
+        >>> progress = TrainingProgress(total_steps=10000, log_steps=10)
+        >>> progress.start()
+        >>> for step in range(10000):
+        >>>     progress.update(step, loss=0.5, lr=1e-4)
+        >>> progress.finish()
+    """
+
+    # Status indicators
+    STATUS_WARMUP = "🔥 Warming up"
+    STATUS_TRAINING = "🚀 Training"
+    STATUS_EVALUATING = "📊 Evaluating"
+    STATUS_SAVING = "💾 Saving"
+    STATUS_COMPLETE = "✅ Complete"
+    STATUS_ERROR = "❌ Error"
+
+    def __init__(
+        self,
+        total_steps: int,
+        log_steps: int = 10,
+        warmup_steps: int = 0,
+        output: TextIO | None = None,
+    ) -> None:
+        """Initialize progress tracker.
+
+        Args:
+            total_steps: Maximum training steps
+            log_steps: Steps between progress updates
+            warmup_steps: Number of warmup steps
+            output: Output stream (defaults to stdout)
+        """
+        self.total_steps = total_steps
+        self.log_steps = log_steps
+        self.warmup_steps = warmup_steps
+        self.output = output or sys.stdout
+
+        self.start_time: datetime | None = None
+        self.step_times: list[float] = []
+        self.current_status = self.STATUS_TRAINING
+        self.last_metrics: TrainingMetrics | None = None
+        self._last_update_time: float = 0.0
+
+    def _write(self, text: str, end: str = "\n") -> None:
+        """Write to output stream."""
+        self.output.write(text + end)
+        self.output.flush()
+
+    def _format_duration(self, seconds: float) -> str:
+        """Format duration in human-readable form."""
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        elif seconds < 3600:
+            return f"{seconds / 60:.1f}m"
+        else:
+            return f"{seconds / 3600:.1f}h"
+
+    def _format_eta(self, remaining_steps: int) -> str:
+        """Estimate time remaining based on recent step times."""
+        if len(self.step_times) < 2:
+            return "calculating..."
+
+        # Use recent steps for ETA (last 100 or all if less)
+        recent = self.step_times[-100:]
+        avg_step_time = sum(recent) / len(recent)
+        eta_seconds = avg_step_time * remaining_steps
+
+        return self._format_duration(eta_seconds)
+
+    def _get_gpu_memory(self) -> float:
+        """Get current GPU memory usage in GB."""
+        if torch.cuda.is_available():
+            return torch.cuda.memory_allocated() / 1e9
+        return 0.0
+
+    def _progress_bar(self, progress: float, width: int = 30) -> str:
+        """Create ASCII progress bar."""
+        filled = int(width * progress)
+        bar = "█" * filled + "░" * (width - filled)
+        return f"[{bar}]"
+
+    def start(self) -> None:
+        """Record training start and print header."""
+        self.start_time = datetime.now()
+        self._last_update_time = time.time()
+
+        self._write("\n" + "═" * 70)
+        self._write("  TRITTER TRAINING")
+        self._write("═" * 70)
+        self._write(f"  Start time:    {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self._write(f"  Total steps:   {self.total_steps:,}")
+        self._write(f"  Warmup steps:  {self.warmup_steps:,}")
+        self._write(f"  Log interval:  every {self.log_steps} steps")
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+            self._write(f"  GPU:           {gpu_name} ({gpu_memory:.1f} GB)")
+        self._write("═" * 70 + "\n")
+
+    def update(
+        self,
+        step: int,
+        loss: float,
+        lr: float,
+        tokens_per_sec: float = 0.0,
+        grad_norm: float = 0.0,
+        epoch: int = 0,
+    ) -> None:
+        """Update progress with current metrics.
+
+        Args:
+            step: Current training step
+            loss: Current loss value
+            lr: Current learning rate
+            tokens_per_sec: Training throughput
+            grad_norm: Gradient norm (for monitoring)
+            epoch: Current epoch
+        """
+        now = time.time()
+
+        # Track step timing
+        if len(self.step_times) > 0:
+            step_time = now - self._last_update_time
+            self.step_times.append(step_time)
+        self._last_update_time = now
+
+        # Store metrics
+        self.last_metrics = TrainingMetrics(
+            step=step,
+            epoch=epoch,
+            loss=loss,
+            lr=lr,
+            tokens_per_sec=tokens_per_sec,
+            gpu_memory_gb=self._get_gpu_memory(),
+            grad_norm=grad_norm,
+        )
+
+        # Determine status
+        if step < self.warmup_steps:
+            self.current_status = self.STATUS_WARMUP
+        else:
+            self.current_status = self.STATUS_TRAINING
+
+        # Only log at intervals
+        if step % self.log_steps != 0:
+            return
+
+        # Calculate progress
+        progress = step / self.total_steps
+        remaining_steps = self.total_steps - step
+        eta = self._format_eta(remaining_steps)
+
+        # Calculate elapsed time
+        elapsed = datetime.now() - self.start_time if self.start_time else timedelta(0)
+        elapsed_str = self._format_duration(elapsed.total_seconds())
+
+        # Format progress line
+        bar = self._progress_bar(progress)
+        pct = progress * 100
+
+        # Build status line
+        status_line = (
+            f"{self.current_status} │ "
+            f"Step {step:>7,}/{self.total_steps:,} │ "
+            f"{bar} {pct:>5.1f}% │ "
+            f"Loss: {loss:.4f} │ "
+            f"LR: {lr:.2e} │ "
+            f"Elapsed: {elapsed_str} │ "
+            f"ETA: {eta}"
+        )
+
+        self._write(status_line)
+
+        # Additional metrics line (GPU memory, throughput)
+        if torch.cuda.is_available() or tokens_per_sec > 0:
+            gpu_mem = self._get_gpu_memory()
+            extras = []
+            if gpu_mem > 0:
+                extras.append(f"GPU: {gpu_mem:.2f} GB")
+            if tokens_per_sec > 0:
+                extras.append(f"Throughput: {tokens_per_sec:.0f} tok/s")
+            if grad_norm > 0:
+                extras.append(f"Grad norm: {grad_norm:.3f}")
+            if extras:
+                self._write(f"           │ {' │ '.join(extras)}")
+
+    def set_status(self, status: str) -> None:
+        """Update current status indicator.
+
+        Args:
+            status: New status string (use STATUS_* constants)
+        """
+        self.current_status = status
+        self._write(f"\n{status}")
+
+    def log_eval(self, metrics: dict[str, float]) -> None:
+        """Log evaluation results.
+
+        Args:
+            metrics: Dictionary of evaluation metrics
+        """
+        self._write("\n" + "─" * 50)
+        self._write(f"  {self.STATUS_EVALUATING} Results:")
+        for name, value in metrics.items():
+            self._write(f"    {name}: {value:.4f}")
+        self._write("─" * 50 + "\n")
+
+    def log_checkpoint(self, path: str) -> None:
+        """Log checkpoint save.
+
+        Args:
+            path: Checkpoint path
+        """
+        self._write(f"\n{self.STATUS_SAVING} Checkpoint saved to: {path}\n")
+
+    def finish(self, error: str | None = None) -> None:
+        """Print training completion summary.
+
+        Args:
+            error: Error message if training failed
+        """
+        end_time = datetime.now()
+        total_duration = end_time - self.start_time if self.start_time else timedelta(0)
+
+        self._write("\n" + "═" * 70)
+
+        if error:
+            self._write(f"  {self.STATUS_ERROR}")
+            self._write(f"  Error: {error}")
+        else:
+            self._write(f"  {self.STATUS_COMPLETE}")
+
+        self._write("═" * 70)
+        self._write(f"  End time:      {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self._write(f"  Total duration: {self._format_duration(total_duration.total_seconds())}")
+
+        if self.last_metrics:
+            self._write(f"  Final step:    {self.last_metrics.step:,}")
+            self._write(f"  Final loss:    {self.last_metrics.loss:.4f}")
+
+        if len(self.step_times) > 0:
+            avg_step = sum(self.step_times) / len(self.step_times)
+            self._write(f"  Avg step time: {avg_step * 1000:.1f} ms")
+
+        self._write("═" * 70 + "\n")
 
 
 @dataclass
@@ -99,6 +378,7 @@ class Trainer:
         train_dataloader: DataLoader,
         eval_dataloader: DataLoader | None = None,
         device: torch.device | None = None,
+        verbose: bool = True,
     ) -> None:
         """Initialize trainer.
 
@@ -109,6 +389,7 @@ class Trainer:
             train_dataloader: Training data
             eval_dataloader: Optional evaluation data
             device: Training device (defaults to CUDA if available)
+            verbose: Enable visual progress feedback
 
         Why: Device selection prioritizes CUDA for speed. Model is moved to device
         before optimizer creation to ensure optimizer states are on correct device.
@@ -120,6 +401,7 @@ class Trainer:
         self.train_dataloader = train_dataloader
         self.eval_dataloader = eval_dataloader
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.verbose = verbose
 
         # Move model to device
         self.model.to(self.device)
@@ -147,6 +429,15 @@ class Trainer:
         # Why: CrossEntropyLoss with ignore_index=0 skips padding tokens. Padding doesn't
         # contribute to loss or gradients, preventing the model from learning to predict padding.
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=0)
+
+        # Progress tracker
+        # Why: Visual feedback helps monitor training progress and distinguish between
+        # stuck loops and normal training. Essential for long-running jobs.
+        self.progress = TrainingProgress(
+            total_steps=training_config.max_steps,
+            log_steps=training_config.log_steps,
+            warmup_steps=training_config.warmup_steps,
+        ) if verbose else None
 
         # Create output directory
         Path(self.config.output_dir).mkdir(parents=True, exist_ok=True)
@@ -287,9 +578,39 @@ class Trainer:
         - Logging: Track loss and learning rate
         - Checkpointing: Save model state for recovery and deployment
         - Evaluation: Monitor validation performance
+
+        Visual feedback: Progress bar, ETA, throughput, and GPU memory are displayed
+        at each log interval to monitor training status.
+        """
+        # Start progress tracking
+        if self.progress:
+            self.progress.start()
+
+        try:
+            self._train_loop()
+        except KeyboardInterrupt:
+            if self.progress:
+                self.progress.finish(error="Training interrupted by user")
+            raise
+        except Exception as e:
+            if self.progress:
+                self.progress.finish(error=str(e))
+            raise
+
+        # Training complete
+        if self.progress:
+            self.progress.finish()
+
+    def _train_loop(self) -> None:
+        """Internal training loop implementation.
+
+        Why: Separated from train() to enable clean exception handling and
+        progress tracking in the outer method.
         """
         self.model.train()
         accumulated_loss = 0.0
+        step_start_time = time.time()
+        tokens_processed = 0
 
         # Create iterator (will cycle through dataset)
         data_iter = iter(self.train_dataloader)
@@ -303,6 +624,10 @@ class Trainer:
                 data_iter = iter(self.train_dataloader)
                 batch = next(data_iter)
 
+            # Track tokens for throughput
+            batch_tokens = batch["input_ids"].numel()
+            tokens_processed += batch_tokens
+
             # Training step
             loss = self.train_step(batch)
             accumulated_loss += loss
@@ -310,6 +635,7 @@ class Trainer:
             # Gradient accumulation check
             # Why: Only update weights after accumulating N steps to get effective
             # batch size of (batch_size * gradient_accumulation_steps)
+            grad_norm = 0.0
             if (self.global_step + 1) % self.config.gradient_accumulation_steps == 0:
                 # Gradient clipping
                 # Why: Unscale gradients before clipping (if using mixed precision).
@@ -318,10 +644,10 @@ class Trainer:
                 if self.scaler is not None:
                     self.scaler.unscale_(self.optimizer)
 
-                torch.nn.utils.clip_grad_norm_(
+                grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(),
                     self.config.max_grad_norm,
-                )
+                ).item()
 
                 # Optimizer step
                 if self.scaler is not None:
@@ -335,24 +661,55 @@ class Trainer:
 
             self.global_step += 1
 
-            # Logging
+            # Logging with visual progress
             if self.global_step % self.config.log_steps == 0:
                 avg_loss = accumulated_loss / self.config.log_steps
                 lr = self.scheduler.get_last_lr()[0]
-                print(f"Step {self.global_step}: loss={avg_loss:.4f}, lr={lr:.2e}")
+
+                # Calculate throughput
+                elapsed = time.time() - step_start_time
+                tokens_per_sec = tokens_processed / elapsed if elapsed > 0 else 0
+
+                if self.progress:
+                    self.progress.update(
+                        step=self.global_step,
+                        loss=avg_loss,
+                        lr=lr,
+                        tokens_per_sec=tokens_per_sec,
+                        grad_norm=grad_norm,
+                        epoch=self.epoch,
+                    )
+                else:
+                    print(f"Step {self.global_step}: loss={avg_loss:.4f}, lr={lr:.2e}")
+
+                # Reset accumulators
                 accumulated_loss = 0.0
+                step_start_time = time.time()
+                tokens_processed = 0
 
             # Evaluation
             if self.eval_dataloader is not None and self.global_step % self.config.eval_steps == 0:
-                self.evaluate()
+                if self.progress:
+                    self.progress.set_status(TrainingProgress.STATUS_EVALUATING)
+                eval_metrics = self.evaluate()
+                if self.progress:
+                    self.progress.log_eval(eval_metrics)
                 self.model.train()  # Return to training mode
 
             # Checkpointing
             if self.global_step % self.config.save_steps == 0:
-                self.save_checkpoint()
+                if self.progress:
+                    self.progress.set_status(TrainingProgress.STATUS_SAVING)
+                checkpoint_path = self.save_checkpoint()
+                if self.progress:
+                    self.progress.log_checkpoint(checkpoint_path)
 
         # Final save
-        self.save_checkpoint()
+        if self.progress:
+            self.progress.set_status(TrainingProgress.STATUS_SAVING)
+        final_path = self.save_checkpoint()
+        if self.progress:
+            self.progress.log_checkpoint(final_path)
 
     @torch.inference_mode()
     def evaluate(self) -> dict[str, float]:
@@ -372,6 +729,7 @@ class Trainer:
         self.model.eval()
         total_loss = 0.0
         total_tokens = 0
+        num_batches = 0
 
         for batch in self.eval_dataloader:
             input_ids = batch["input_ids"].to(self.device)
@@ -396,19 +754,30 @@ class Trainer:
             # Weighting by token count gives correct average loss across full dataset.
             total_loss += loss.item() * targets.numel()
             total_tokens += targets.numel()
+            num_batches += 1
 
         avg_loss = total_loss / max(1, total_tokens)
         perplexity = torch.exp(torch.tensor(avg_loss)).item()
 
-        print(f"Eval: loss={avg_loss:.4f}, perplexity={perplexity:.2f}")
+        # Only print if not using progress tracker (it will handle display)
+        if not self.progress:
+            print(f"Eval: loss={avg_loss:.4f}, perplexity={perplexity:.2f}")
 
-        return {"eval_loss": avg_loss, "perplexity": perplexity}
+        return {
+            "eval_loss": avg_loss,
+            "perplexity": perplexity,
+            "eval_batches": num_batches,
+            "eval_tokens": total_tokens,
+        }
 
-    def save_checkpoint(self, path: str | None = None) -> None:
+    def save_checkpoint(self, path: str | None = None) -> str:
         """Save training checkpoint.
 
         Args:
             path: Optional custom path, defaults to output_dir/checkpoint-{step}
+
+        Returns:
+            Path where checkpoint was saved
 
         Why: Checkpoints enable:
         - Fault tolerance: Resume training after crashes or preemption
@@ -440,7 +809,12 @@ class Trainer:
             checkpoint["scaler_state_dict"] = self.scaler.state_dict()
 
         torch.save(checkpoint, os.path.join(path, "trainer_state.pt"))
-        print(f"Saved checkpoint to {path}")
+
+        # Only print if not using progress tracker
+        if not self.progress:
+            print(f"Saved checkpoint to {path}")
+
+        return path
 
     def load_checkpoint(self, path: str) -> None:
         """Load training checkpoint.
