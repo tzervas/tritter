@@ -37,12 +37,33 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install in editable mode with dev dependencies
 pip install -e ".[dev]"
 
+# Install pre-commit hooks
+pre-commit install
+
 # Verify installation
-python -c "from tritter import TritterModel; print('✓ Installation successful')"
+python -c "from tritter import TritterModel; print('Installation successful')"
 
 # Run tests to ensure everything works
 pytest tests/
 ```
+
+### Pre-commit Hooks
+
+Pre-commit hooks automatically enforce coding standards before each commit:
+
+```bash
+# Hooks run automatically on commit, but you can run manually:
+pre-commit run --all-files
+
+# Update hooks to latest versions
+pre-commit autoupdate
+```
+
+Hooks include:
+- **ruff**: Linting and formatting
+- **mypy**: Static type checking
+- **import-validator**: Ensures `__all__` exports match imports
+- **Standard hooks**: Trailing whitespace, YAML/TOML validation, etc.
 
 ### Understanding the Project
 
@@ -59,6 +80,51 @@ pytest tests/
 - **Memory Constraints**: All code must respect RTX 5080 16GB VRAM budget. See memory breakdown in `DEVELOPMENT_STANDARDS.md`.
 - **BitNet Quantization**: 1.58-bit ternary weights {-1, 0, +1} reduce 7B model from 14GB to 1.4GB.
 - **Early Fusion Multimodal**: Chameleon-style unified embedding space for text/code/image/audio.
+
+---
+
+## Spec-Driven Development
+
+Tritter follows spec-driven development: **define specifications before implementation**.
+
+### Documentation Hierarchy
+
+```
+docs/
+├── specs/          # Specifications (what to build)
+│   └── SPEC-001-flexattention.md
+├── guides/         # Implementation guides (how to build)
+│   └── GUIDE-001-flexattention-implementation.md
+└── adr/            # Architecture Decision Records (why we decided)
+    └── ADR-001-bitnet-quantization.md
+```
+
+### Workflow
+
+1. **Specification**: Define requirements, acceptance criteria, and test specs
+2. **ADR** (if needed): Document architectural decisions with alternatives considered
+3. **Implementation Guide**: Create step-by-step instructions
+4. **Implementation**: Follow the guide, marking checkboxes as you go
+5. **Verification**: Run tests from spec, update spec status
+
+### Creating a New Feature
+
+For significant features, create documentation first:
+
+```bash
+# 1. Create specification
+docs/specs/SPEC-XXX-feature-name.md
+
+# 2. If architectural decision needed
+docs/adr/ADR-XXX-decision-name.md
+
+# 3. Create implementation guide
+docs/guides/GUIDE-XXX-feature-implementation.md
+
+# 4. Then implement following the guide
+```
+
+See existing specs and ADRs for templates and examples.
 
 ---
 
@@ -645,5 +711,5 @@ Contributors who make significant improvements to code quality, documentation, o
 
 ---
 
-**Last Updated:** 2026-01-21
-**Version:** 1.0
+**Last Updated:** 2026-01-22
+**Version:** 1.1
