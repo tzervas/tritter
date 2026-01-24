@@ -11,46 +11,89 @@ This directory contains curated training datasets for the Tritter multimodal tra
 - Aggressive deduplication (exact hash + near-duplicate filtering)
 - Domain-specific filtering (remove auto-generated code, minified files)
 
+**Contrastive learning**: We include both positive (high-quality) and negative (poor-quality) examples. Negative examples are labeled with explanations so the model learns to identify and explain bad code.
+
 ## Directory Structure
 
 ```
 data/
 ├── README.md                    # This file
 ├── curated_repos.json          # High-quality repository lists
+├── sample/                     # Sample data for testing pipelines
+│   ├── python_positive.jsonl   # High-quality Python examples
+│   ├── python_negative.jsonl   # Low-quality examples with explanations
+│   └── python_mixed.jsonl      # Mixed quality for realistic testing
 ├── curated/                    # Filtered datasets ready for training
 │   ├── python_curated.jsonl
 │   ├── rust_curated.jsonl
 │   └── javascript_curated.jsonl
+├── pretrain/                   # Sharded data from prepare_pretrain_data.py
+│   ├── shard_00000.jsonl
+│   ├── shard_00001.jsonl
+│   └── ...
 ├── raw/                        # Unprocessed downloads (gitignored)
 └── processed/                  # Intermediate processing stages (gitignored)
 ```
 
-## Running Dataset Curation
+## Data Preparation
 
-### List Available Datasets
+### Quick Start with Sample Data
+
+The `data/sample/` directory contains test data to validate the training pipeline:
 
 ```bash
+# Test the training pipeline with sample data
+python scripts/train_pretrain.py --model 1B --data-dir data/sample --dry-run
+```
+
+### Preparing Custom Training Data
+
+Use `prepare_pretrain_data.py` to process source code files through the curation pipeline:
+
+```bash
+# Basic usage - process a directory of code files
+python scripts/prepare_pretrain_data.py \
+    --input-dir /path/to/code \
+    --output-dir data/pretrain \
+    --shard-size 10000
+
+# With quality filtering (only high-quality samples)
+python scripts/prepare_pretrain_data.py \
+    --input-dir /path/to/code \
+    --output-dir data/pretrain \
+    --min-quality 0.7 \
+    --positive-only
+
+# Process specific languages with parallel workers
+python scripts/prepare_pretrain_data.py \
+    --input-dir /path/to/code \
+    --output-dir data/pretrain \
+    --languages python rust \
+    --workers 8
+```
+
+**Command-line options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--input-dir` | Required | Directory containing source code files |
+| `--output-dir` | Required | Directory to write JSONL shards |
+| `--shard-size` | 10000 | Number of samples per shard file |
+| `--min-quality` | 0.5 | Minimum quality score for positive samples |
+| `--positive-only` | False | Exclude negative examples from output |
+| `--languages` | All | Languages to include (python, rust, etc.) |
+| `--workers` | 1 | Number of parallel workers |
+| `--dry-run` | False | Count files without processing |
+
+### Curating from The Stack v2
+
+For large-scale data from HuggingFace, use `curate_datasets.py`:
+
+```bash
+# List available subsets
 python scripts/curate_datasets.py --list-subsets
-```
 
-Output:
-```
-Available Stack v2 subsets:
-  python:
-    Size: 233 GB
-    Files: 57,000,000
-    Description: Python code from Software Heritage
-  rust:
-    Size: 15.6 GB
-    Files: 2,200,000
-    Description: Rust code from Software Heritage
-  ...
-```
-
-### Download and Filter Python Code
-
-```bash
-# Full dataset (will take hours/days)
+# Download and filter Python subset
 python scripts/curate_datasets.py --language python --output data/curated
 
 # Limited sample for testing (1000 samples)
@@ -60,30 +103,30 @@ python scripts/curate_datasets.py --language python --max-samples 1000 --output 
 python scripts/curate_datasets.py --language python --min-stars 500 --output data/curated
 ```
 
-### Download Rust Code
-
-```bash
-python scripts/curate_datasets.py --language rust --min-stars 100 --output data/curated
-```
-
-### Dry Run (Count Without Saving)
-
-```bash
-python scripts/curate_datasets.py --language python --min-stars 100 --dry-run
-```
-
 ## Output Format
 
 All curated datasets are saved as JSONL (JSON Lines) with the following schema:
 
+### Positive Samples (High Quality)
+
 ```json
 {
-  "text": "def hello():\n    print('world')",
+  "text": "def hello():\n    \"\"\"Say hello.\"\"\"\n    print('world')",
   "language": "python",
-  "license": "mit",
-  "stars": 1500,
-  "path": "src/main.py",
-  "repo": "owner/repository"
+  "quality_score": 0.95,
+  "source": "examples/hello.py"
+}
+```
+
+### Negative Samples (For Contrastive Learning)
+
+```json
+{
+  "text": "def f(x):\n    return eval(x)",
+  "language": "python",
+  "quality_score": 0.15,
+  "quality_label": "negative",
+  "explanation": "This code has security issues:\n- eval() allows arbitrary code execution.\nFix: Use ast.literal_eval() for safe evaluation."
 }
 ```
 
@@ -93,10 +136,44 @@ All curated datasets are saved as JSONL (JSON Lines) with the following schema:
 |-------|------|-------------|
 | `text` | string | Full code content |
 | `language` | string | Programming language (python, rust, javascript) |
-| `license` | string | SPDX license identifier (lowercase) |
-| `stars` | integer | Maximum GitHub stars for the repository |
-| `path` | string | Relative file path within repository |
-| `repo` | string | GitHub repository identifier |
+| `quality_score` | float | Quality score [0.0, 1.0] from curation pipeline |
+| `quality_label` | string | "positive" or "negative" (omitted for positive) |
+| `explanation` | string | For negative samples, why the code is bad |
+| `source` | string | Relative file path or repository identifier |
+| `license` | string | SPDX license identifier (if from external source) |
+| `stars` | integer | GitHub stars (if from external source) |
+
+## Sample Data
+
+The `data/sample/` directory contains pre-curated examples for testing:
+
+### python_positive.jsonl (5 samples)
+
+High-quality Python code with proper documentation:
+- Fibonacci function with full docstring
+- Generic Result type (Rust-inspired error handling)
+- Timing decorator with proper typing
+- File walker utility
+- LRU cache implementation
+
+### python_negative.jsonl (6 samples)
+
+Code with issues for contrastive learning:
+- `eval()` vulnerability (code injection)
+- `pickle.load()` and `shell=True` (security issues)
+- Excessive parameters and unclear names (quality issues)
+- Deep nesting (maintainability issues)
+- Hardcoded credentials (CRITICAL - would be rejected in real pipeline)
+- SQL injection vulnerability
+
+### python_mixed.jsonl (5 samples)
+
+Mix of positive and negative for realistic training:
+- Deep merge utility (positive)
+- Bare except clause (negative)
+- Secure password hashing (positive)
+- Unclear variable names (negative)
+- Timeout context manager (positive)
 
 ## Quality Criteria
 
@@ -113,63 +190,40 @@ Only permissive licenses are included:
 - `unlicense`
 - `cc0-1.0`
 
-### Repository Quality
+### Security Filtering (SPEC-007)
 
-- Minimum GitHub stars: 100 (default, configurable)
-- Maintained repositories (implicit via Stack v2 curation)
-- Well-documented (presence of README, docstrings)
+| Issue Type | Action |
+|------------|--------|
+| Hardcoded secrets | **ALWAYS REJECT** (never train on secrets) |
+| SQL injection | Label as negative + explanation |
+| Code injection (eval/exec) | Label as negative + explanation |
+| Shell injection | Label as negative + explanation |
+| Unsafe deserialization | Label as negative + explanation |
 
-### File Quality
+### Quality Filtering
 
-**Include:**
-- 10-10,000 lines (filters trivial and auto-generated files)
-- <500KB file size (prevents minified/bundled code)
-- >25% alphabetic character ratio (filters binary/encoded data)
-- <10% lines over 500 characters (filters minified code)
+| Criterion | Threshold | Rationale |
+|-----------|-----------|-----------|
+| Line count | 5-10,000 | Filter trivial and auto-generated |
+| File size | <500KB | Filter minified/bundled code |
+| Alpha ratio | >25% | Filter binary/encoded data |
+| Long lines | <10% over 500 chars | Filter minified code |
+| Quality score | >0.5 (configurable) | Threshold for positive label |
 
-**Exclude:**
-- Auto-generated markers: "auto-generated", "do not edit", "generated by"
-- Configuration files (handled by Stack v2 extension filtering)
-- Minified/obfuscated code
-- Binary or encoded data
+### Auto-Generated Detection
+
+Files with these markers in first 20 lines are rejected:
+- "auto-generated"
+- "do not edit"
+- "generated by"
+- "this file is generated"
+- "autogenerated"
 
 ### Deduplication
 
 1. **Exact deduplication**: MD5 hash-based removal (in-memory during processing)
-2. **Near-duplicate**: Planned post-processing with MinHash (Jaccard 0.7-0.8)
+2. **Near-duplicate**: Post-processing with MinHash (Jaccard 0.7-0.8)
 3. **Benchmark contamination**: Post-processing removal of HumanEval, MBPP, DS-1000
-
-## Data Sources
-
-### Primary: The Stack v2 (BigCode)
-
-- **HuggingFace Path**: `bigcode/the-stack-v2-dedup`
-- **License**: Per-file permissive licensing
-- **Size**: 67TB total (233GB Python, 15.6GB Rust)
-- **Quality**: Near-deduplicated, PII removed
-- **Access**: Requires HuggingFace datasets library
-
-```bash
-pip install datasets
-```
-
-### Secondary: Stack-Edu (Educational Quality)
-
-For highest-quality subsets, consider Stack-Edu:
-
-```python
-from datasets import load_dataset
-
-# Python educational quality subset
-ds = load_dataset("HuggingFaceTB/stack-edu", data_dir="python")
-
-# Rust educational quality subset
-ds = load_dataset("HuggingFaceTB/stack-edu", data_dir="rust")
-```
-
-### Curated Repository Lists
-
-See `curated_repos.json` for manually selected high-quality repositories.
 
 ## Training Data Mix
 
@@ -177,58 +231,35 @@ From `TRAINING_STRATEGY.md`, Phase 1 continued pretraining targets:
 
 | Component | Percentage | Tokens | Source |
 |-----------|------------|--------|--------|
-| Python Code | 40% | 40B | Stack v2 Python (this pipeline) |
-| Rust Code | 25% | 25B | Stack v2 Rust (this pipeline) |
+| Python Code | 40% | 40B | Stack v2 Python |
+| Rust Code | 25% | 25B | Stack v2 Rust |
 | High-quality repos | 20% | 20B | Curated repos list |
-| Technical docs | 10% | 10B | Framework docs (manual scraping) |
-| Persona conversations | 5% | 5B | Synthetic (Constitutional AI) |
+| Technical docs | 10% | 10B | Framework docs |
+| Persona conversations | 5% | 5B | Synthetic |
 
 Total: ~100B tokens for Phase 1
 
-## Expected Data Retention Rates
+## Integration with Training
 
-Based on StarCoder2 and DeepSeek-Coder pipelines:
+Once prepared, datasets can be loaded for training:
 
-| Filter Stage | Retention Rate |
-|--------------|----------------|
-| License filtering | 30-50% |
-| Basic filters (lines, size) | 80-90% |
-| Exact deduplication | 90-95% |
-| Quality filters (alpha ratio, long lines) | 70-85% |
-| **Overall** | **15-30%** |
+```python
+# Direct usage with train_pretrain.py
+python scripts/train_pretrain.py --model 3B --data-dir data/pretrain
 
-For Python (57M files), expect **8.5-17M filtered files**.
+# Or load manually
+from datasets import load_dataset
 
-For Rust (2.2M files), expect **330K-660K filtered files**.
+# Load curated dataset
+ds = load_dataset("json", data_files="data/pretrain/shard_*.jsonl")
 
-## Next Steps
-
-1. **Run curation for Python**:
-   ```bash
-   python scripts/curate_datasets.py --language python --output data/curated
-   ```
-
-2. **Run curation for Rust**:
-   ```bash
-   python scripts/curate_datasets.py --language rust --output data/curated
-   ```
-
-3. **Verify output**:
-   ```bash
-   wc -l data/curated/python_curated.jsonl
-   head -n 1 data/curated/python_curated.jsonl | jq .
-   ```
-
-4. **Near-duplicate filtering** (post-processing):
-   ```bash
-   # TODO: Implement MinHash LSH deduplication
-   # Expected: 55-70% retention after near-dedup
-   ```
-
-5. **Benchmark decontamination** (post-processing):
-   ```bash
-   # TODO: Remove HumanEval, MBPP, DS-1000 samples
-   ```
+# Streaming mode for large datasets
+ds = load_dataset(
+    "json",
+    data_files="data/pretrain/shard_*.jsonl",
+    streaming=True,
+)
+```
 
 ## Storage Requirements
 
@@ -240,27 +271,14 @@ For Rust (2.2M files), expect **330K-660K filtered files**.
 
 Ensure sufficient disk space before starting curation.
 
-## Integration with Training
-
-Once curated, datasets can be loaded for training:
-
-```python
-from datasets import load_dataset
-
-# Load curated Python dataset
-ds = load_dataset("json", data_files="data/curated/python_curated.jsonl")
-
-# Streaming mode for large datasets
-ds = load_dataset("json", data_files="data/curated/python_curated.jsonl", streaming=True)
-```
-
 ## References
 
 - [TRAINING_STRATEGY.md](../docs/TRAINING_STRATEGY.md) - Overall training strategy
+- [SPEC-007](../docs/specs/SPEC-007-dataset-quality-gates.md) - Quality gates specification
 - [clean-datasets.md](../docs/clean-datasets.md) - Dataset sources and quality criteria
 - [The Stack v2](https://huggingface.co/datasets/bigcode/the-stack-v2) - Primary data source
 - [Stack-Edu](https://huggingface.co/datasets/HuggingFaceTB/stack-edu) - Educational quality subset
 
 ---
 
-*Last Updated: 2026-01-23*
+*Last Updated: 2026-01-24*
