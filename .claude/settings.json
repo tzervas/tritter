@@ -25,6 +25,7 @@
       "Bash(tail:*)",
       "Bash(nvidia-smi:*)",
       "Bash(nvcc:*)",
+      "Bash(* /tmp/*)",
       "Bash(rm *.pyc)",
       "Bash(rm -r __pycache__:*)",
       "Bash(rm -rf __pycache__:*)",

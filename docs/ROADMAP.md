@@ -21,9 +21,8 @@
 
 ### In Progress
 
-- BitNet-2B weight validation
 - Triton data source curation
-- Model validation with pretrained weights
+- 128K context verification
 
 ---
 
@@ -74,8 +73,8 @@ Layers stream from CPU to GPU in groups. Double buffering overlaps transfer with
 |--------|------|
 | ✅ | FlashAttention `is_causal=True` |
 | ✅ | `attention_mode` config field |
-| ⏳ | Sliding window attention |
-| ⏳ | FlexAttention mask primitives |
+| ✅ | Sliding window attention |
+| ✅ | FlexAttention mask primitives |
 
 See [SPEC-001](specs/SPEC-001-flexattention.md).
 
@@ -87,7 +86,7 @@ See [SPEC-001](specs/SPEC-001-flexattention.md).
 |--------|------|
 | ✅ | MemoryManager with budget enforcement |
 | ✅ | Async transfer engine |
-| ⏳ | INT4 KV-cache quantization |
+| ✅ | INT4 KV-cache quantization |
 | ⏳ | 128K context verification |
 
 See [SPEC-005](specs/SPEC-005-memory-optimization.md).
@@ -147,9 +146,9 @@ See [TRAINING_STRATEGY.md](TRAINING_STRATEGY.md) and [SPEC-007](specs/SPEC-007-d
 
 ## Open Issues
 
-- #6: Sliding window not implemented
-- #19: RTX 5080 FP8 optimizations
-- #20-25: Test improvements
+- #58: Triton dataset curation
+- #59: Embedding prediction feedback loop
+- #60: SigLIP vision encoder integration
 
 ---
 

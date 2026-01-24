@@ -54,6 +54,7 @@ TODO: Implement after:
 3. Choose primary deployment target (vLLM vs TensorRT vs custom)
 """
 
+from tritter.inference.kv_cache import INT4KVCache, QuantizedTensor
 from tritter.inference.layer_streaming import (
     LayerGroupBuffer,
     LayerLoader,
@@ -153,12 +154,14 @@ class InferenceEngine:
 
 __all__ = [
     "InferenceEngine",
+    "INT4KVCache",
     "KVCacheManager",
     "EmbeddingRounder",
     "LayerGroupBuffer",
     "LayerLoader",
     "MemoryManager",
     "MemoryAllocation",
+    "QuantizedTensor",
     "StreamingInferenceEngine",
     "TransferEngine",
     "pin_model_weights",
