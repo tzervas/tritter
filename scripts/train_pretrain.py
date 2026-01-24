@@ -43,6 +43,7 @@ from torch.utils.data import DataLoader, IterableDataset
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from tritter import TritterConfig, TritterModel
+from tritter.tokenization import ModalityType
 from tritter.training import Trainer, TrainingConfig
 from tritter.utils import check_memory_fit, detect_gpu_profile
 
@@ -101,7 +102,11 @@ class PretrainDataset(IterableDataset):
                     if not text:
                         continue
 
-                    tokens = self.tokenizer.encode(text)
+                    # Determine modality from language field
+                    language = item.get("language", "python")
+                    modality = ModalityType.CODE if language in ("python", "rust", "javascript", "typescript", "go", "java", "c", "cpp") else ModalityType.TEXT
+
+                    tokens = self.tokenizer.encode(text, modality=modality, language=language)
 
                     # Add to buffer
                     buffer.extend(tokens)
@@ -129,17 +134,18 @@ def create_training_config(
 
     Why: Different GPUs have different batch size / accumulation tradeoffs.
     """
-    # Base config
-    batch_size = 4  # Per-device micro-batch
-    seq_length = 2048
+    # Base config - reduced for memory efficiency
+    # 1B model with full precision requires ~12GB+ for weights+gradients+optimizer
+    batch_size = 1  # Reduced for memory
+    seq_length = 512  # Reduced from 2048 for memory
 
-    # Adjust gradient accumulation based on VRAM
+    # Increase gradient accumulation to compensate for smaller batch
     if profile.vram_gb >= 24:
-        grad_accum = 8
-    elif profile.vram_gb >= 16:
-        grad_accum = 16
-    else:
         grad_accum = 32
+    elif profile.vram_gb >= 16:
+        grad_accum = 64  # More accumulation to reach effective batch
+    else:
+        grad_accum = 128
 
     # Effective batch size in tokens
     effective_batch_tokens = batch_size * seq_length * grad_accum
@@ -149,8 +155,18 @@ def create_training_config(
     warmup_steps = min(warmup_tokens // effective_batch_tokens, total_steps // 10)  # Cap warmup at 10% of total
 
     # Learning rate based on model size
-    model_b = float(model_size.upper().rstrip("B"))
-    if model_b <= 1:
+    # Handle various size formats: "1B", "125M", "test"
+    size_upper = model_size.upper()
+    if size_upper == "TEST":
+        model_b = 0.01  # ~10M params
+    elif size_upper.endswith("M"):
+        model_b = float(size_upper.rstrip("M")) / 1000  # Convert M to B
+    else:
+        model_b = float(size_upper.rstrip("B"))
+
+    if model_b <= 0.5:
+        lr = 5e-4  # Higher LR for tiny models
+    elif model_b <= 1:
         lr = 3e-4
     elif model_b <= 3:
         lr = 2e-4
@@ -285,6 +301,11 @@ def main():
     print("Creating model...")
     model = TritterModel(model_config)
 
+    # Enable gradient checkpointing for memory efficiency
+    # Why: Reduces memory by ~60% by recomputing activations during backward
+    print("Enabling gradient checkpointing for memory efficiency...")
+    model.gradient_checkpointing_enable()
+
     # Load from smaller model for progressive training
     if args.init_from:
         print(f"Loading weights from {args.init_from}...")
@@ -293,8 +314,8 @@ def main():
         print("Starting from scratch...")
 
     # Create tokenizer
-    from tritter.tokenization import MultimodalTokenizer
-    tokenizer = MultimodalTokenizer()
+    from tritter.tokenization import MultiModalTokenizer
+    tokenizer = MultiModalTokenizer()
 
     # Create dataset
     print(f"Loading data from {args.data_dir}...")

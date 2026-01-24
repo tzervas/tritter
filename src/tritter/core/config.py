@@ -74,7 +74,7 @@ class TritterConfig:
     """
 
     # Model architecture
-    model_size: Literal["1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"] = "3B"
+    model_size: Literal["test", "125M", "350M", "1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"] = "3B"
     hidden_size: int = 2048
     num_layers: int = 24
     num_heads: int = 16
@@ -350,6 +350,17 @@ class TritterConfig:
         ):
             self.num_kv_heads = spec.num_kv_heads
 
+        # Apply vocab_size from spec if different and user didn't override
+        # Why: Some model sizes (like "test") use smaller vocab for efficiency
+        default_vocab_size = 65536
+        if self.vocab_size == default_vocab_size and spec.vocab_size != default_vocab_size:
+            self.vocab_size = spec.vocab_size
+
+        # Apply max_position_embeddings from spec if different
+        default_max_pos = 131072
+        if self.max_position_embeddings == default_max_pos and spec.max_position_embeddings != default_max_pos:
+            self.max_position_embeddings = spec.max_position_embeddings
+
         # Auto-enable layer streaming for large models if not explicitly set
         # Why: Models 30B+ typically won't fit on a single 16GB GPU without streaming
         large_model_sizes = {"30B", "33B", "40B", "65B", "70B"}
@@ -469,7 +480,7 @@ class TritterConfig:
         vocab_size: int = 65536,
         max_position_embeddings: int = 131072,
         # Model size reference (optional, for sensible defaults)
-        model_size: Literal["1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"]
+        model_size: Literal["test", "125M", "350M", "1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"]
         | None = None,
         # All other config parameters can be overridden
         **kwargs,
