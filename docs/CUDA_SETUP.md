@@ -50,11 +50,7 @@ GPU: NVIDIA GeForce RTX 5080
 
 ### RTX 5080 Compute Capability Warning
 
-The RTX 5080 has CUDA compute capability `sm_120`, which is newer than the capabilities in PyTorch 2.5.1 (`sm_50` through `sm_90`). You may see this warning:
-
-```
-UserWarning: NVIDIA GeForce RTX 5080 with CUDA capability sm_120 is not compatible with the current PyTorch installation.
-```
+The RTX 5080 reports a CUDA compute capability newer than the capabilities in PyTorch 2.5.1 (`sm_50` through `sm_90`). You may see a warning that the GPU's compute capability is not yet supported by the current PyTorch build.
 
 **Impact**: Most PyTorch operations will still work, but some optimized kernels may fall back to slower implementations.
 
@@ -107,7 +103,7 @@ python scripts/verify_128k_context.py
 
 - Python 3.14+: Not supported by PyTorch yet (as of 2026-01)
 - Python 3.12-3.13: Fully supported
-- Python 3.11 and below: Compatible but not recommended
+- Python 3.11 and below: Not supported by Tritter (requires Python 3.12+)
 
 To check your environment's Python:
 ```bash

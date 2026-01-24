@@ -252,7 +252,7 @@ See [`docs/project-plan.md`](docs/project-plan.md) for detailed citations and te
 - Inference engine not yet implemented
 - No pretrained weights available
 - Multimodal capabilities (image, audio) require additional encoder integration
-- Not tested on actual RTX 5080 hardware (theoretical memory budget only)
+- RTX 5080 16GB memory budget has been validated on real hardware; some CUDA kernels may fall back until newer compute capability support lands in PyTorch
 
 ## License
 
