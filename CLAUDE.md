@@ -468,6 +468,74 @@ config = TritterConfig.for_research(
 # Try num_kv_heads = [1, 2, 4, 8, 16]
 ```
 
+## Training Pipeline
+
+### Data Preparation
+
+Curate training data from source code using the curation pipeline:
+
+```bash
+# Basic usage - process a directory of code files
+python scripts/prepare_pretrain_data.py \
+    --input-dir /path/to/code \
+    --output-dir data/pretrain \
+    --shard-size 10000
+
+# With quality filtering (only high-quality samples)
+python scripts/prepare_pretrain_data.py \
+    --input-dir /path/to/code \
+    --output-dir data/pretrain \
+    --min-quality 0.7 \
+    --positive-only
+
+# Fast parallel processing
+python scripts/prepare_pretrain_data.py \
+    --input-dir /path/to/code \
+    --output-dir data/pretrain \
+    --workers 8
+```
+
+### Pretraining
+
+Train a model on curated data:
+
+```bash
+# Train 1B model (baseline, ~4 hours on RTX 5080)
+python scripts/train_pretrain.py --model 1B --data-dir data/pretrain
+
+# Train 3B model (primary, ~12 hours on RTX 5080)
+python scripts/train_pretrain.py --model 3B --data-dir data/pretrain
+
+# Train 7B model (flagship, ~36 hours on RTX 5080)
+python scripts/train_pretrain.py --model 7B --data-dir data/pretrain
+
+# Resume from checkpoint
+python scripts/train_pretrain.py --model 3B --resume checkpoints/3b-step-50000/
+
+# Specify total tokens
+python scripts/train_pretrain.py --model 3B --data-dir data/pretrain --total-tokens 100000000000
+```
+
+### Pipeline Flow
+
+```
+1. Raw code → prepare_pretrain_data.py → Curated JSONL shards (data/pretrain/)
+2. JSONL shards → train_pretrain.py → Model checkpoints (checkpoints/)
+3. Checkpoints → (planned) upload_to_huggingface.py → HuggingFace Hub
+```
+
+### Output Format
+
+Data preparation outputs JSONL with fields:
+- `text`: Code content
+- `language`: Programming language
+- `quality_score`: Quality score [0.0, 1.0]
+- `quality_label`: "positive" or "negative" (for contrastive learning)
+- `explanation`: Why code is marked negative (security/quality issues)
+- `source`: Relative file path
+
+See [data/README.md](data/README.md) for full schema and sample data.
+
 ## Training Data Strategy
 
 From [TRAINING_STRATEGY.md](docs/TRAINING_STRATEGY.md):

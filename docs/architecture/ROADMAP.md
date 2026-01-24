@@ -40,6 +40,7 @@
 
 | Feature | Location | Notes |
 |---------|----------|-------|
+| Training pipeline | `scripts/prepare_pretrain_data.py`, `scripts/train_pretrain.py` | Data curation and pretraining scripts |
 | Triton data source curation | `curation/triton_extraction.py` | Extraction done, curation in progress |
 | BitNet-2B weight validation | `scripts/validate_bitnet_weights.py` | Script exists, needs validation data |
 | 128K context verification | - | Needs GPU testing |
@@ -179,6 +180,11 @@ src/tritter/
 ├── training/
 │   ├── trainer.py              # BitNet QAT training
 │   └── lora.py                 # LoRA/QLoRA fine-tuning
+scripts/
+├── prepare_pretrain_data.py    # Data curation pipeline
+├── train_pretrain.py           # Pretraining script
+├── curate_datasets.py          # HuggingFace dataset curation
+└── ...                         # Hardware/benchmark utilities
 ├── curation/                   # Dataset quality pipeline
 │   ├── secrets.py              # Secret detection (20+ patterns)
 │   ├── security.py             # Security vulnerability scanning

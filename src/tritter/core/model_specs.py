@@ -119,6 +119,18 @@ class ModelSpec:
         """Total parameters in billions."""
         return self.total_params() / 1e9
 
+    @property
+    def packed_size_gb(self) -> float:
+        """Packed ternary weight size in GB.
+
+        Why: Useful for memory planning and model card generation.
+        Packed ternary uses 2 bits per weight plus scale factors.
+        """
+        total_params = self.total_params()
+        # 2 bits per param + scales (~4 bytes per 4096 params)
+        packed_bytes = total_params * 0.25 + (total_params / 4096) * 4
+        return packed_bytes / (1024**3)
+
 
 # =============================================================================
 # Model Specifications Registry

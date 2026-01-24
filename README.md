@@ -147,6 +147,22 @@ mypy src/tritter
 python -c "from tritter import *; print('OK')"
 ```
 
+### Training
+
+Prepare training data and run pretraining:
+
+```bash
+# Curate training data from source code
+python scripts/prepare_pretrain_data.py \
+    --input-dir /path/to/code \
+    --output-dir data/pretrain
+
+# Train model (requires GPU)
+python scripts/train_pretrain.py --model 1B --data-dir data/pretrain
+```
+
+See [CLAUDE.md](CLAUDE.md#training-pipeline) for full training pipeline documentation.
+
 ### Development Tools
 
 The `devtools/` module provides development utilities:
