@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Tests**: 342 tests (276 passing, 66 skipped without CUDA)
+**Tests**: 495 tests passing, 3 skipped, 24 CUDA environment issues
 **Branch**: develop
 
 ### Completed ✅
@@ -14,6 +14,8 @@
 | TernaryWeight with STE gradient flow | `quantization/bitnet.py` | ✅ Implemented |
 | Packed Ternary Inference (2-bit) | `quantization/packed_ternary.py` | ✅ Implemented |
 | Multimodal byte-level tokenization | `tokenization/multimodal.py` | ✅ Implemented |
+| BPE tokenization (tiktoken) | `tokenization/multimodal.py` | ✅ Implemented |
+| AST-aware code tokenization | `tokenization/ast_tokenizer.py` | ✅ Implemented |
 | FlashAttention with `is_causal=True` | `models/architecture.py` | ✅ Implemented |
 | FlexAttention mask primitives | `attention/flex_attention.py` | ✅ Implemented |
 | Sliding window attention | `attention/flex_attention.py` | ✅ Implemented |
@@ -26,9 +28,13 @@
 | Training loop with BitNet QAT | `training/trainer.py` | ✅ Implemented |
 | LoRA/QLoRA fine-tuning | `training/lora.py` | ✅ Implemented |
 | Dataset curation pipeline | `curation/` | ✅ Implemented |
-| Quality gates (security, quality) | `curation/quality_analyzer.py` | ✅ Implemented |
+| Secret detection | `curation/secrets.py` | ✅ Implemented |
+| Security scanning | `curation/security.py` | ✅ Implemented |
+| Quality analysis | `curation/quality.py` | ✅ Implemented |
+| MinHash deduplication | `curation/dedup.py` | ✅ Implemented |
 | SigLIP-B/16 vision encoder | `vision/siglip.py` | ✅ Implemented |
-| Model specs (1B-70B) | `quantization/model_specs.py` | ✅ Implemented |
+| EnCodec audio tokenization | `audio/encodec.py` | ✅ Implemented |
+| Model specs (1B-70B) | `core/model_specs.py` | ✅ Implemented |
 
 ### In Progress ⏳
 
@@ -42,7 +48,6 @@
 
 | Feature | Priority | Target |
 |---------|----------|--------|
-| EnCodec audio tokenization | High | Phase 4 |
 | VQ-VAE image tokenization | Medium | Phase 4 |
 | Unified multimodal embedding space | Medium | Phase 4 |
 | KNN/VQ rounding for embedding prediction | Medium | Phase 5 |
@@ -50,7 +55,6 @@
 | Depth Up-Scaling (DUS) 3B→7B | Medium | Phase 7 |
 | Width Up-Scaling (Net2Net) | Medium | Phase 7 |
 | EWC forgetting prevention | Low | Phase 7 |
-| MinHash near-duplicate detection | Low | Phase 6 |
 | **Pretrained weights** | **Critical** | **Phase 8** |
 
 ---
@@ -176,6 +180,16 @@ src/tritter/
 │   ├── trainer.py              # BitNet QAT training
 │   └── lora.py                 # LoRA/QLoRA fine-tuning
 ├── curation/                   # Dataset quality pipeline
+│   ├── secrets.py              # Secret detection (20+ patterns)
+│   ├── security.py             # Security vulnerability scanning
+│   ├── quality.py              # Code quality analysis
+│   ├── dedup.py                # MinHash deduplication
+│   ├── pipeline.py             # Unified curation pipeline
+│   └── schema.py               # Data labeling schema
+├── vision/
+│   └── siglip.py               # SigLIP-B/16 vision encoder
+├── audio/
+│   └── encodec.py              # EnCodec audio tokenization
 └── utils/memory_utils.py       # OS memory detection
 ```
 
@@ -183,7 +197,6 @@ src/tritter/
 
 ```
 src/tritter/
-├── audio/encodec.py            # EnCodec audio encoder (PLANNED)
 ├── vision/vqvae.py             # VQ-VAE image tokenizer (PLANNED)
 ├── embedding/                  # Embedding prediction (PLANNED)
 │   ├── knn_rounding.py         # KNN token lookup
