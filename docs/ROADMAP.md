@@ -132,6 +132,24 @@ See [TRAINING_STRATEGY.md](TRAINING_STRATEGY.md) and [SPEC-007](specs/SPEC-007-d
 
 ---
 
+## Phase 7: Progressive Model Training
+
+| Status | Task |
+|--------|------|
+| ✅ | Research and specification (SPEC-008, ADR-003) |
+| ⏳ | Core expansion infrastructure |
+| ⏳ | Depth Up-Scaling (DUS) - 3B → 7B, 7B → 10B |
+| ⏳ | Width Up-Scaling (Net2Net style) |
+| ⏳ | Progressive MoE for domain experts |
+| ⏳ | EWC forgetting prevention |
+| ⏳ | Checkpoint compatibility format |
+
+Enables users to progressively train models from 3B → 10B → 100B → 1T+ without starting from scratch.
+
+See [SPEC-008](specs/SPEC-008-progressive-model-training.md) and [ADR-003](adr/003-progressive-model-training.md).
+
+---
+
 ## Memory Budget (RTX 5080 16GB)
 
 | Component | Size |
@@ -150,4 +168,4 @@ See [TRAINING_STRATEGY.md](TRAINING_STRATEGY.md) and [SPEC-007](specs/SPEC-007-d
 
 ---
 
-*Last Updated: 2026-01-23*
+*Last Updated: 2026-01-24*
