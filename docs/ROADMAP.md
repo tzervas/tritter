@@ -108,7 +108,7 @@ See [SPEC-005](specs/SPEC-005-memory-optimization.md).
 
 | Status | Task |
 |--------|------|
-| ⏳ | Hidden state feedback loop |
+| ✅ | Hidden state feedback loop |
 | ⏳ | KNN/VQ rounding |
 | ⏳ | Curriculum training |
 
@@ -147,7 +147,6 @@ See [TRAINING_STRATEGY.md](TRAINING_STRATEGY.md) and [SPEC-007](specs/SPEC-007-d
 ## Open Issues
 
 - #58: Triton dataset curation
-- #59: Embedding prediction feedback loop
 - #60: SigLIP vision encoder integration
 
 ---

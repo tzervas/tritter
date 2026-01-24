@@ -303,3 +303,220 @@ class TestTritterModel:
             "This bounds check catches initialization errors or missing components that "
             "weak assertions like 'assert total_params > 0' would miss."
         )
+
+
+class TestEmbeddingPrediction:
+    """Tests for embedding prediction paradigm support.
+
+    Why: Tritter operates in continuous embedding space (Coconut/LCM style).
+    These tests validate that the model can return embeddings instead of logits,
+    enabling continuous reasoning without discrete token bottlenecks.
+    """
+
+    def test_return_embeddings_flag(self) -> None:
+        """Verify return_embeddings=True returns continuous embeddings.
+
+        Why: Embedding prediction requires access to continuous representations
+        instead of discretized logits. This is the core interface for the paradigm.
+        """
+        config = TritterConfig(
+            hidden_size=128,
+            num_heads=4,
+            num_layers=2,
+            vocab_size=1000,
+            use_bitnet=False,
+        )
+        model = TritterModel(config)
+
+        batch_size = 2
+        seq_len = 8
+        input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len))
+
+        # Default: returns logits
+        logits = model(input_ids, return_embeddings=False)
+        assert logits.shape == (batch_size, seq_len, config.vocab_size)
+
+        # With flag: returns embeddings
+        embeddings = model(input_ids, return_embeddings=True)
+        assert embeddings.shape == (batch_size, seq_len, config.hidden_size)
+
+    def test_get_embeddings_method(self) -> None:
+        """Verify get_embeddings() convenience method works.
+
+        Why: Clearer API for embedding extraction use cases like
+        semantic similarity and continuous reasoning.
+        """
+        config = TritterConfig(
+            hidden_size=128,
+            num_heads=4,
+            num_layers=1,
+            vocab_size=1000,
+            use_bitnet=False,
+        )
+        model = TritterModel(config)
+
+        input_ids = torch.randint(0, config.vocab_size, (2, 8))
+
+        embeddings = model.get_embeddings(input_ids)
+
+        assert embeddings.shape == (2, 8, config.hidden_size)
+
+    def test_embeddings_differ_from_logits_projection(self) -> None:
+        """Verify embeddings are continuous (not just pre-softmax logits).
+
+        Why: Embeddings should be the transformer output BEFORE the lm_head
+        projection. They should have different shape and semantic content.
+        """
+        config = TritterConfig(
+            hidden_size=128,
+            num_heads=4,
+            num_layers=1,
+            vocab_size=1000,
+            use_bitnet=False,
+        )
+        model = TritterModel(config)
+
+        input_ids = torch.randint(0, config.vocab_size, (1, 4))
+
+        embeddings = model(input_ids, return_embeddings=True)
+        logits = model(input_ids, return_embeddings=False)
+
+        # Different shapes
+        assert embeddings.shape[-1] == config.hidden_size
+        assert logits.shape[-1] == config.vocab_size
+
+        # Logits should be the projection of embeddings
+        # (This verifies they're related but distinct)
+        projected = model.lm_head(embeddings)
+        assert torch.allclose(projected, logits, atol=1e-5)
+
+    def test_get_target_embeddings(self) -> None:
+        """Verify target embedding extraction for embedding loss.
+
+        Why: Embedding prediction loss uses MSE between predicted embeddings
+        and target embeddings (embeddings of the next token).
+        """
+        config = TritterConfig(
+            hidden_size=128,
+            num_heads=4,
+            num_layers=1,
+            vocab_size=1000,
+            use_bitnet=False,
+        )
+        model = TritterModel(config)
+
+        labels = torch.randint(0, config.vocab_size, (2, 8))
+
+        target_embeddings = model.get_target_embeddings(labels)
+
+        assert target_embeddings.shape == (2, 8, config.hidden_size)
+
+        # Should be the same as directly embedding the labels
+        direct_embeddings = model.embed_tokens(labels)
+        assert torch.allclose(target_embeddings, direct_embeddings)
+
+    def test_embedding_prediction_loss_pure_token(self) -> None:
+        """Verify embedding_prediction_loss with alpha=0 (pure token loss).
+
+        Why: Alpha=0 should behave identically to standard cross-entropy training.
+        This is the starting point for curriculum training.
+        """
+        config = TritterConfig(
+            hidden_size=128,
+            num_heads=4,
+            num_layers=1,
+            vocab_size=1000,
+            use_bitnet=False,
+        )
+        model = TritterModel(config)
+
+        input_ids = torch.randint(0, config.vocab_size, (2, 8))
+        labels = torch.randint(0, config.vocab_size, (2, 8))
+
+        loss_dict = model.embedding_prediction_loss(input_ids, labels, alpha=0.0)
+
+        assert 'loss' in loss_dict
+        assert 'token_loss' in loss_dict
+        assert 'embedding_loss' in loss_dict
+        assert 'alpha' in loss_dict
+
+        # With alpha=0, combined loss should equal token loss
+        assert torch.allclose(loss_dict['loss'], loss_dict['token_loss'])
+
+    def test_embedding_prediction_loss_pure_embedding(self) -> None:
+        """Verify embedding_prediction_loss with alpha=1 (pure embedding loss).
+
+        Why: Alpha=1 is the target state for embedding prediction training.
+        Loss should be purely MSE between predicted and target embeddings.
+        """
+        config = TritterConfig(
+            hidden_size=128,
+            num_heads=4,
+            num_layers=1,
+            vocab_size=1000,
+            use_bitnet=False,
+        )
+        model = TritterModel(config)
+
+        input_ids = torch.randint(0, config.vocab_size, (2, 8))
+        labels = torch.randint(0, config.vocab_size, (2, 8))
+
+        loss_dict = model.embedding_prediction_loss(input_ids, labels, alpha=1.0)
+
+        # With alpha=1, combined loss should equal embedding loss
+        assert torch.allclose(loss_dict['loss'], loss_dict['embedding_loss'])
+
+    def test_embedding_prediction_loss_hybrid(self) -> None:
+        """Verify embedding_prediction_loss with hybrid alpha.
+
+        Why: Curriculum training uses intermediate alpha values to smoothly
+        transition from token to embedding prediction.
+        """
+        config = TritterConfig(
+            hidden_size=128,
+            num_heads=4,
+            num_layers=1,
+            vocab_size=1000,
+            use_bitnet=False,
+        )
+        model = TritterModel(config)
+
+        input_ids = torch.randint(0, config.vocab_size, (2, 8))
+        labels = torch.randint(0, config.vocab_size, (2, 8))
+
+        alpha = 0.5
+        loss_dict = model.embedding_prediction_loss(input_ids, labels, alpha=alpha)
+
+        # Hybrid loss should be weighted combination
+        expected_loss = (1 - alpha) * loss_dict['token_loss'] + alpha * loss_dict['embedding_loss']
+        assert torch.allclose(loss_dict['loss'], expected_loss)
+
+    def test_embedding_gradients_flow(self) -> None:
+        """Verify gradients flow correctly in embedding prediction mode.
+
+        Why: Training requires gradients to flow from embedding loss back to
+        model parameters. This validates the backward pass works.
+        """
+        config = TritterConfig(
+            hidden_size=128,
+            num_heads=4,
+            num_layers=1,
+            vocab_size=1000,
+            use_bitnet=False,
+        )
+        model = TritterModel(config)
+
+        input_ids = torch.randint(0, config.vocab_size, (2, 8))
+        labels = torch.randint(0, config.vocab_size, (2, 8))
+
+        loss_dict = model.embedding_prediction_loss(input_ids, labels, alpha=1.0)
+        loss_dict['loss'].backward()
+
+        # Verify gradients exist on model parameters
+        has_grads = False
+        for param in model.parameters():
+            if param.grad is not None and param.grad.abs().max() > 0:
+                has_grads = True
+                break
+
+        assert has_grads, "No gradients flowed during embedding prediction loss backward"

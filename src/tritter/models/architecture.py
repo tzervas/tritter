@@ -1,8 +1,18 @@
-"""
-Tritter multimodal transformer architecture.
+"""Tritter multimodal transformer architecture.
 
 Implements a transformer-based model with BitNet quantization, multimodal support,
 and optimizations for 128K context window processing.
+
+Why (Embedding-Prediction Paradigm):
+    Tritter operates in continuous embedding space:
+    - Entry point: Tokenization converts discrete tokens → embeddings
+    - Core computation: Transformer layers operate on continuous embeddings
+    - Exit point: Output projection to logits is temporary scaffolding;
+      production uses KNN/VQ rounding only when outputting text
+
+    The model's "reasoning" happens in continuous embedding space, not discrete
+    token space. Token prediction via logits is temporary for training compatibility.
+    See SPEC-003-embedding-prediction.md for full paradigm documentation.
 """
 
 import torch
@@ -298,31 +308,66 @@ class TritterLayer(nn.Module):
 
 
 class TritterModel(nn.Module):
-    """Main Tritter multimodal transformer model."""
+    """Main Tritter multimodal transformer model with embedding prediction support.
+
+    Why (Embedding-Prediction Paradigm):
+        This model operates in continuous embedding space. The forward() method supports
+        two modes:
+        - return_embeddings=False (default): Returns logits for token prediction training
+        - return_embeddings=True: Returns continuous embeddings for embedding prediction
+
+        Token prediction via logits is temporary scaffolding for training compatibility.
+        Production inference uses embedding prediction with KNN/VQ rounding.
+
+    Attributes:
+        config: TritterConfig instance
+        embed_tokens: Token embedding layer (entry point from discrete to continuous)
+        layers: Stack of TritterLayer transformer blocks
+        norm: Final LayerNorm before output
+        lm_head: Output projection to logits (temporary scaffolding)
+
+    Example:
+        >>> config = TritterConfig(model_size="3B")
+        >>> model = TritterModel(config)
+        >>> # Token prediction mode (training)
+        >>> logits = model(input_ids)  # (B, L, vocab_size)
+        >>> # Embedding prediction mode
+        >>> embeddings = model(input_ids, return_embeddings=True)  # (B, L, D)
+    """
 
     def __init__(self, config: TritterConfig) -> None:
         """Initialize Tritter model.
 
         Args:
             config: Model configuration
+
+        Why: Initializes all components for embedding-prediction architecture.
+        The lm_head is temporary scaffolding for training - production inference
+        will use get_embeddings() + KNN/VQ rounding instead.
         """
         super().__init__()
         self.config = config
 
-        # Embeddings
+        # Embeddings - Entry point from discrete tokens to continuous space
+        # Why: This is the ONLY place where discrete tokens enter the model.
+        # After this, all computation operates on continuous embedding vectors.
         self.embed_tokens = UnifiedEmbedding(
             config.vocab_size,
             config.hidden_size,
             padding_idx=0,
         )
 
-        # Transformer layers
+        # Transformer layers - Core computation in continuous space
+        # Why: Each layer transforms embeddings → embeddings without any
+        # intermediate tokenization, consistent with Coconut/LCM paradigm.
         self.layers = nn.ModuleList([TritterLayer(config) for _ in range(config.num_layers)])
 
         # Final layer norm
         self.norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-        # Output projection
+        # Output projection - Temporary scaffolding for token prediction training
+        # Why: Cross-entropy training requires logits over vocabulary. This will
+        # be bypassed in production when using embedding prediction + rounding.
         if config.use_bitnet:
             self.lm_head = TernaryWeight(config.hidden_size, config.vocab_size, bias=False)
         else:
@@ -332,27 +377,183 @@ class TritterModel(nn.Module):
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
+        return_embeddings: bool = False,
     ) -> torch.Tensor:
-        """Forward pass through the model.
+        """Forward pass with optional embedding prediction.
+
+        Args:
+            input_ids: Input token IDs of shape (batch_size, seq_len)
+            attention_mask: Optional attention mask
+            return_embeddings: If True, return embeddings instead of logits
+
+        Returns:
+            If return_embeddings=True: Hidden states (batch_size, seq_len, hidden_size)
+            If return_embeddings=False: Logits (batch_size, seq_len, vocab_size)
+
+        Why (Embedding-Prediction Context):
+            This method supports both token prediction (training compatibility) and
+            embedding prediction (continuous reasoning). The return_embeddings flag
+            determines whether to apply the output projection or return raw embeddings.
+
+            Token prediction mode computes cross-entropy loss against target tokens.
+            Embedding prediction mode enables continuous reasoning and deferred
+            discretization via KNN/VQ rounding.
+
+        Note (Token Interface):
+            input_ids is the entry point from discrete to continuous space.
+            If return_embeddings=False, logits are the exit point back to discrete.
+            If return_embeddings=True, caller is responsible for discretization.
+        """
+        # Entry point: tokens → embeddings
+        # Why: This is the ONLY discretization boundary. After embedding lookup,
+        # all subsequent computation operates in continuous space.
+        hidden_states = self.embed_tokens(input_ids)  # (B, L, D)
+
+        # Core computation: embeddings → embeddings
+        # Why: No tokenization between layers. Each layer transforms continuous
+        # representations, preserving semantic information without discretization loss.
+        for layer in self.layers:
+            hidden_states = layer(hidden_states, attention_mask)  # Still (B, L, D)
+
+        # Final layer norm
+        hidden_states = self.norm(hidden_states)  # (B, L, D)
+
+        # Return embeddings for embedding prediction mode
+        if return_embeddings:
+            return hidden_states  # (B, L, D) - continuous representation
+
+        # Exit point (temporary): embeddings → logits
+        # Why: Token prediction scaffolding for training. Production will bypass
+        # this and use KNN/VQ rounding on embeddings instead.
+        logits = self.lm_head(hidden_states)  # (B, L, vocab_size)
+
+        return logits
+
+    def get_embeddings(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Extract continuous embeddings without token projection.
 
         Args:
             input_ids: Input token IDs of shape (batch_size, seq_len)
             attention_mask: Optional attention mask
 
         Returns:
-            Logits of shape (batch_size, seq_len, vocab_size)
+            Hidden state embeddings of shape (batch_size, seq_len, hidden_size)
+
+        Why (Embedding-Prediction Context):
+            Convenience method for embedding extraction. Equivalent to
+            forward(input_ids, return_embeddings=True) but with clearer intent.
+
+            Use this for:
+            - Semantic similarity computation
+            - Embedding-based generation with KNN/VQ rounding
+            - Continuous reasoning / latent chain-of-thought
+            - Feature extraction for downstream tasks
+
+        Example:
+            >>> embeddings = model.get_embeddings(input_ids)
+            >>> # Find nearest token via KNN
+            >>> distances = torch.cdist(embeddings, model.embed_tokens.weight)
+            >>> nearest_tokens = distances.argmin(dim=-1)
         """
-        # Embed tokens
-        hidden_states = self.embed_tokens(input_ids)
+        return self.forward(input_ids, attention_mask, return_embeddings=True)
 
-        # Pass through transformer layers
-        for layer in self.layers:
-            hidden_states = layer(hidden_states, attention_mask)
+    def get_target_embeddings(self, labels: torch.Tensor) -> torch.Tensor:
+        """Get target embeddings for embedding prediction loss.
 
-        # Final layer norm
-        hidden_states = self.norm(hidden_states)
+        Args:
+            labels: Target token IDs of shape (batch_size, seq_len)
 
-        # Project to vocabulary
-        logits = self.lm_head(hidden_states)
+        Returns:
+            Target embeddings of shape (batch_size, seq_len, hidden_size)
 
-        return logits
+        Why (Embedding-Prediction Context):
+            For hybrid or pure embedding prediction training, the target is the
+            embedding of the next token rather than a one-hot distribution. This
+            method retrieves the target embeddings for MSE loss computation.
+
+            Hybrid loss: α * MSE(pred_emb, target_emb) + (1-α) * CE(logits, labels)
+            Pure embedding loss: MSE(pred_emb, target_emb)
+
+        Example:
+            >>> pred_embeddings = model.get_embeddings(input_ids)
+            >>> target_embeddings = model.get_target_embeddings(labels)
+            >>> embedding_loss = F.mse_loss(pred_embeddings, target_embeddings)
+        """
+        return self.embed_tokens(labels)
+
+    def embedding_prediction_loss(
+        self,
+        input_ids: torch.Tensor,
+        labels: torch.Tensor,
+        alpha: float = 0.0,
+        attention_mask: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Compute hybrid embedding + token prediction loss.
+
+        Args:
+            input_ids: Input token IDs of shape (batch_size, seq_len)
+            labels: Target token IDs of shape (batch_size, seq_len)
+            alpha: Weight for embedding loss (0.0 = pure token, 1.0 = pure embedding)
+            attention_mask: Optional attention mask
+
+        Returns:
+            Dictionary containing:
+            - 'loss': Combined loss value
+            - 'token_loss': Cross-entropy token loss
+            - 'embedding_loss': MSE embedding loss
+            - 'alpha': Current alpha value (for logging)
+
+        Why (Embedding-Prediction Context):
+            Curriculum training starts with α=0 (pure token loss) and gradually
+            increases to α=1 (pure embedding loss). This allows the model to learn
+            token prediction first, then transition to embedding prediction.
+
+            The hybrid approach provides:
+            1. Training stability (token loss grounds initial learning)
+            2. Smooth transition to embedding prediction
+            3. Flexibility to tune the α schedule
+
+        Example:
+            >>> # Early training: mostly token loss
+            >>> loss_dict = model.embedding_prediction_loss(input_ids, labels, alpha=0.1)
+            >>> # Late training: mostly embedding loss
+            >>> loss_dict = model.embedding_prediction_loss(input_ids, labels, alpha=0.9)
+        """
+        import torch.nn.functional as F
+
+        # Get predicted embeddings and logits
+        hidden_states = self.forward(input_ids, attention_mask, return_embeddings=True)
+        logits = self.lm_head(hidden_states)  # (B, L, vocab_size)
+
+        # Get target embeddings (embeddings of the next token)
+        target_embeddings = self.get_target_embeddings(labels)  # (B, L, D)
+
+        # Token prediction loss (cross-entropy)
+        # Shift logits and labels for next-token prediction
+        shift_logits = logits[..., :-1, :].contiguous()  # (B, L-1, vocab_size)
+        shift_labels = labels[..., 1:].contiguous()  # (B, L-1)
+        token_loss = F.cross_entropy(
+            shift_logits.view(-1, shift_logits.size(-1)),
+            shift_labels.view(-1),
+            ignore_index=-100,  # Ignore padding
+        )
+
+        # Embedding prediction loss (MSE)
+        # Shift hidden states and target embeddings for next-embedding prediction
+        shift_hidden = hidden_states[..., :-1, :].contiguous()  # (B, L-1, D)
+        shift_target = target_embeddings[..., 1:, :].contiguous()  # (B, L-1, D)
+        embedding_loss = F.mse_loss(shift_hidden, shift_target)
+
+        # Combined loss
+        loss = (1 - alpha) * token_loss + alpha * embedding_loss
+
+        return {
+            'loss': loss,
+            'token_loss': token_loss,
+            'embedding_loss': embedding_loss,
+            'alpha': torch.tensor(alpha),
+        }
