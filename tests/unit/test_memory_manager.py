@@ -21,6 +21,7 @@ from tritter.core.config import TritterConfig
 from tritter.inference.memory_manager import MemoryManager
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required for MemoryManager tests")
 class TestMemoryManager:
     """Test suite for MemoryManager class."""
 

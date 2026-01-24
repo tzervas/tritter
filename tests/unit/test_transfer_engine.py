@@ -214,6 +214,6 @@ def test_transfer_engine_cpu_only() -> None:
 
     # Should be able to create engine (may fail on actual transfer)
     if not torch.cuda.is_available():
-        with pytest.raises(AssertionError):
+        with pytest.raises((AssertionError, RuntimeError)):
             # CUDA stream creation will fail without CUDA
             engine = TransferEngine(config)
