@@ -9,7 +9,6 @@ Why: Vision encoder is critical for multimodal capability. Tests verify:
 4. Projection aligns with model hidden size
 """
 
-import pytest
 import torch
 
 from tritter.core.config import TritterConfig

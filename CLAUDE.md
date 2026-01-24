@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Tritter** is a multimodal transformer (text/code/image/audio) with BitNet 1.58-bit ternary quantization {-1, 0, 1}, optimized for RTX 5080 16GB VRAM. Targets 3B and 7B parameter models with 128K context window.
+**Tritter** is a multimodal transformer (text/code/image/audio) with BitNet 1.58-bit ternary quantization {-1, 0, 1}, optimized for RTX 5080 16GB VRAM. Supports model sizes from 1B to 70B with 128K context window.
 
 **Core Vision**: Embedding-prediction paradigm (Coconut/LCM style) where the model operates in continuous embedding space, not discrete token space. Token prediction is temporary scaffolding for training compatibility.
 
@@ -49,8 +49,10 @@ When writing model or tokenization code, docstrings **must** explicitly acknowle
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| **TritterConfig** | [config.py](src/tritter/core/config.py) | Single source of truth; "7B" auto-configures |
-| **TernaryWeight** | [bitnet.py](src/tritter/quantization/bitnet.py) | BitNet quantization with STE gradient flow |
+| **TritterConfig** | [config.py](src/tritter/core/config.py) | Single source of truth; auto-configures from model_size |
+| **ModelSpec** | [model_specs.py](src/tritter/core/model_specs.py) | Specifications for all model sizes (1B-70B) |
+| **TernaryWeight** | [bitnet.py](src/tritter/quantization/bitnet.py) | BitNet quantization with STE gradient flow (training) |
+| **PackedTernaryWeight** | [packed_ternary.py](src/tritter/quantization/packed_ternary.py) | 2-bit packed weights (inference only) |
 | **TritterAttention** | [architecture.py](src/tritter/models/architecture.py) | Multi-head attention with QK-Norm |
 | **TritterMLP** | [architecture.py](src/tritter/models/architecture.py) | FFN with **Squared ReLU** (required for BitNet) |
 | **TritterLayer** | [architecture.py](src/tritter/models/architecture.py) | Post-FFN LayerNorm (Chameleon-style) |
@@ -58,6 +60,9 @@ When writing model or tokenization code, docstrings **must** explicitly acknowle
 | **LayerLoader** | [layer_streaming.py](src/tritter/inference/layer_streaming.py) | Layer group loading/eviction with double buffering |
 | **MemoryManager** | [memory_manager.py](src/tritter/inference/memory_manager.py) | GPU memory tracking and budget enforcement |
 | **TransferEngine** | [transfer_engine.py](src/tritter/inference/transfer_engine.py) | Async CPU→GPU transfers with CUDA streams |
+| **LoRAConfig** | [lora.py](src/tritter/training/lora.py) | Configuration for LoRA fine-tuning |
+| **LoRALinear** | [lora.py](src/tritter/training/lora.py) | Low-rank adapter wrapping base layers |
+| **LoRATrainer** | [lora.py](src/tritter/training/lora.py) | Trainer specialized for LoRA fine-tuning |
 
 ### Critical Architecture Decisions
 
@@ -66,6 +71,25 @@ When writing model or tokenization code, docstrings **must** explicitly acknowle
 3. **Post-FFN LayerNorm** - Chameleon-style: normalize after MLP residual, not before
 4. **FlashAttention** - Use `is_causal=True` (not manual mask) for optimal kernel dispatch
 5. **Progressive Layer Loading** - Stream layer groups through GPU for unbounded model size
+
+### Supported Model Sizes
+
+| Size | Params | Hidden | Layers | Packed Weights | Recommended VRAM |
+|------|--------|--------|--------|----------------|------------------|
+| 1B   | 1.1B   | 2048   | 16     | 261 MB         | 8GB              |
+| 3B   | 2.4B   | 2560   | 26     | 574 MB         | 8GB              |
+| 7B   | 6.2B   | 4096   | 32     | 1.45 GB        | 16GB             |
+| 10B  | 9.3B   | 4096   | 40     | 2.16 GB        | 16GB             |
+| 13B  | 11.7B  | 5120   | 40     | 2.73 GB        | 24GB             |
+| 30B  | 28.5B  | 6656   | 60     | 6.66 GB        | 24GB+streaming   |
+| 33B  | 30.2B  | 6912   | 60     | 7.06 GB        | 24GB+streaming   |
+| 40B  | 42.2B  | 8192   | 60     | 9.87 GB        | 48GB / 2x24GB    |
+| 65B  | 56.4B  | 8192   | 80     | 13.2 GB        | 80GB / 4x24GB    |
+| 70B  | 69.5B  | 8192   | 80     | 16.3 GB        | 80GB / 4x24GB    |
+
+Models 7B+ use Grouped Query Attention (GQA) for KV-cache efficiency.
+
+**View model details**: `python scripts/show_model_specs.py --model 7B`
 
 ### Progressive Layer Loading
 
@@ -96,48 +120,184 @@ See [ADR-002](docs/adr/002-progressive-layer-loading.md) and [SPEC-006](docs/spe
 
 | Component | Memory |
 |-----------|--------|
-| 7B BitNet weights | 1.4 GB |
-| KV-cache (128K, INT4) | ~8-10 GB |
+| 7B packed weights | 1.45 GB |
+| KV-cache (32K, INT4) | ~1 GB |
+| KV-cache (128K, INT4) | ~4 GB |
 | Vision encoder (SigLIP-B) | ~0.4 GB |
-| Activations + overhead | ~2-3 GB |
-| **Total** | **~12-15 GB** |
+| Activations + overhead | ~2 GB |
 
-## Implementation Roadmap
+**Recommended configurations**:
+- 7B + 32K context: ~5 GB (comfortable on 8GB+)
+- 7B + 128K context: ~8 GB (fits 16GB with headroom)
 
-### Completed
-- FlashAttention with `is_causal=True`
-- Progressive layer loading (LayerLoader, StreamingInferenceEngine)
-- Memory management (MemoryManager, TransferEngine)
-- Attention mode config field
-- Training loop with BitNet QAT (Trainer, TrainingConfig)
-- Dataset curation pipeline (Python, Rust, Triton)
-- Quality gates (security scanner, quality analyzer)
+See [SPEC-009](docs/specs/SPEC-009-packed-ternary-inference.md) for packed inference details.
 
-### In Progress
-- BitNet-2B weight validation (validate_bitnet_weights.py)
-- Triton data source curation
+### LoRA/QLoRA Fine-Tuning
 
-### Planned
-- Sliding window attention
-- FlexAttention mask primitives
-- INT4 KV-cache quantization
-- Multimodal encoders (SigLIP, EnCodec)
+Full fine-tuning of 7B+ models requires 60GB+ memory. LoRA freezes base weights and adds small trainable adapters:
 
-### Attention Modes (Planned)
+```python
+from tritter.training.lora import LoRAConfig, apply_lora, LoRATrainer
 
-| Mode | Use Case |
-|------|----------|
-| `causal` | Standard autoregressive LM (pretraining) |
-| `bidirectional` | Embedding extraction, semantic encoding |
-| `prefix_lm` | Instruction tuning (bidirectional prefix + causal response) |
-| `embedding` | Coconut-style continuous latent reasoning |
+# Apply QLoRA (LoRA on ternary base weights)
+lora_config = LoRAConfig(
+    rank=16,                    # Low-rank dimension
+    alpha=16.0,                 # Scaling factor
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+)
+model = apply_lora(model, lora_config)
 
-### FlexAttention Patterns (Planned)
+# Only LoRA params (~17M for 7B) are trained
+trainer = LoRATrainer(model, lora_config, learning_rate=1e-4)
+```
 
-- **Causal**: Standard decoder-only
-- **Sliding window**: 4K window bounds KV-cache to ~8GB
-- **Document masking**: Packed sequence training without cross-doc attention
-- **StreamingLLM**: Attention sinks for streaming beyond window
+**QLoRA Memory Comparison**:
+
+| Model | Full Training | QLoRA (r=16) | Fits RTX 5080? |
+|-------|--------------|--------------|----------------|
+| 1B    | 12.2 GB      | 1.9 GB       | ✓              |
+| 7B    | 60.8 GB      | 3.7 GB       | ✓              |
+| 13B   | 111.8 GB     | 5.1 GB       | ✓              |
+| 40B   | 397.8 GB     | 13.7 GB      | ✓              |
+| 70B   | 652.1 GB     | 20.2 GB      | ✗              |
+
+See [SPEC-010](docs/specs/SPEC-010-lora-finetuning.md) for full LoRA documentation.
+
+**Run feasibility analysis**: `python scripts/rtx5080_feasibility.py`
+
+## Risk Analysis
+
+### Memory Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| OOM during inference (large context) | High | Use layer streaming, INT4 KV-cache |
+| OOM during training | High | Use QLoRA, gradient checkpointing, smaller batch |
+| KV-cache overflow | High | Limit context length, use sliding window |
+| Activation spikes | Medium | Gradient checkpointing already enabled |
+
+### Quality Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Quantization degradation | Medium | Per-channel scaling, QK-Norm for stability |
+| LoRA underfitting | Medium | Use rank 16+, add MLP targets if needed |
+| Catastrophic forgetting | Medium | Lower learning rate, early stopping |
+
+### Integration Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Pack/unpack precision loss | Low | Lossless ternary encoding (exact round-trip) |
+| Layer streaming latency | Medium | Double buffering, async transfers |
+| LoRA merge with BitNet | Low | Keep adapters separate or zero B after merge |
+
+### Hardware Compatibility
+
+| GPU | Inference (7B) | Training (7B) | Notes |
+|-----|---------------|---------------|-------|
+| RTX 5080 16GB | ✓ 128K ctx | ✓ QLoRA only | Target hardware |
+| RTX 4090 24GB | ✓ 128K ctx | ✓ QLoRA, marginal full | Extra headroom |
+| A100 40GB | ✓ 128K ctx | ✓ Full or QLoRA | Best option |
+| RTX 3080 10GB | ✓ 32K ctx | ✓ QLoRA r=8 | Limited context |
+
+## Hardware Profiles
+
+Primary development hardware: **RTX 5080 (16GB)**, secondary: **RTX 3090 Ti (24GB)**
+
+```python
+from tritter.utils import detect_gpu_profile, create_config_for_profile
+
+# Auto-detect current GPU
+profile = detect_gpu_profile()
+
+# Generate optimized config
+config_kwargs = create_config_for_profile(profile, "7B")
+config = TritterConfig(**config_kwargs)
+```
+
+**Quick check**: `python scripts/hardware_profile.py --check 7B`
+
+### OS Memory Management
+
+Desktop environments reserve GPU memory:
+- Windows 11 DWM: 0.5-1.5 GB (depends on monitors)
+- macOS WindowServer: 0.8 GB
+- Linux Wayland/X11: 0.4-0.5 GB
+
+The `MemoryManager` automatically detects and accounts for this overhead:
+
+```python
+from tritter.utils import check_memory_fit, print_memory_report
+
+# Pre-flight check
+fits, message = check_memory_fit(required_gb=3.7)
+
+# Detailed report
+print_memory_report()
+```
+
+## Implementation Status
+
+### ✅ Implemented (Production Ready)
+
+| Feature | Location | Notes |
+|---------|----------|-------|
+| BitNet 1.58-bit quantization | `quantization/bitnet.py` | STE gradient flow |
+| Packed ternary inference | `quantization/packed_ternary.py` | 16x weight reduction |
+| Model specs 1B-70B | `quantization/model_specs.py` | GQA for 7B+ |
+| FlashAttention | `models/architecture.py` | `is_causal=True` |
+| FlexAttention masks | `attention/flex_attention.py` | Sliding window, etc. |
+| INT4 KV-cache | `attention/kv_cache.py` | 4x cache reduction |
+| Progressive layer loading | `inference/layer_streaming.py` | Run 70B on 16GB |
+| OS-aware memory manager | `inference/memory_manager.py` | Auto-detects desktop overhead |
+| Async transfer engine | `inference/transfer_engine.py` | CUDA stream overlap |
+| BitNet QAT training | `training/trainer.py` | Gradient checkpointing |
+| LoRA/QLoRA fine-tuning | `training/lora.py` | Train 40B on 16GB |
+| Dataset curation | `curation/` | Quality gates, dedup |
+| SigLIP vision encoder | `vision/siglip.py` | 93M params, ~0.4GB |
+| Hardware profiles | `utils/hardware_profiles.py` | RTX 5080, 3090 Ti verified |
+
+### ⏳ In Progress
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Triton data curation | Extraction done | Curation WIP |
+| BitNet-2B validation | Script exists | Needs validation data |
+| 128K context verification | Ready | Needs GPU testing |
+
+### 📋 Planned (Not Yet Implemented)
+
+| Feature | Priority | Notes |
+|---------|----------|-------|
+| EnCodec audio encoder | High | Required for audio modality |
+| VQ-VAE image tokenizer | Medium | Alternative to SigLIP patches |
+| KNN/VQ embedding rounding | Medium | Core embedding-prediction feature |
+| Model expansion (DUS) | Medium | 3B→7B→13B progressive training |
+| Pretrained weights | **Critical** | HuggingFace distribution |
+
+### Attention Modes
+
+| Mode | Status | Use Case |
+|------|--------|----------|
+| `causal` | ✅ Implemented | Standard autoregressive LM |
+| `sliding_window` | ✅ Implemented | Long context with bounded KV-cache |
+| `bidirectional` | 📋 Planned | Embedding extraction |
+| `prefix_lm` | 📋 Planned | Instruction tuning |
+| `embedding` | 📋 Planned | Coconut-style reasoning |
+
+## Pretrained Weights (Planned)
+
+Target distribution via HuggingFace Hub: `tritter-ai/tritter-{size}-{variant}`
+
+| Model | Data | Use Case |
+|-------|------|----------|
+| Tritter-1B | 100B tokens | Baseline, testing |
+| Tritter-3B | 200B tokens | Primary, code focus |
+| Tritter-7B | 300B tokens | Flagship, reasoning |
+| Tritter-7B-Code | +50B code | Python/Rust specialist |
+
+**Formats**: Full FP32 (fine-tuning), Packed ternary (deployment), LoRA adapters (task-specific)
 
 ## Mandatory Development Standards
 
@@ -173,6 +333,140 @@ See [API_CONVENTIONS.md](docs/API_CONVENTIONS.md) for interface schemas:
 - Config validation in `__post_init__`
 - Error messages must include actual and expected values
 - Type hints required for all public APIs
+
+### Configuration API: Developer vs Researcher Modes
+
+TritterConfig supports two distinct usage patterns:
+
+#### Developer Mode (Simple)
+
+Pick a model size and all architecture parameters auto-configure from proven specs:
+
+```python
+from tritter import TritterConfig
+
+# Simplest usage - everything auto-configured
+config = TritterConfig(model_size="7B")
+
+# Override specific optimization flags
+config = TritterConfig(
+    model_size="7B",
+    use_layer_streaming=True,    # Enable for models that don't fit VRAM
+    int4_kv_cache=True,           # 4x KV-cache reduction
+    max_position_embeddings=32768,  # Reduce context to 32K
+)
+```
+
+**Supported sizes**: 1B, 3B, 7B, 10B, 13B, 30B, 33B, 40B, 65B, 70B
+
+Each size uses validated architecture parameters (hidden_size, num_layers, num_heads, etc.) from `model_specs.py`.
+
+#### Researcher Mode (Advanced)
+
+Full manual control for architecture exploration and ablation studies:
+
+```python
+# From scratch - specify all architecture params
+config = TritterConfig.for_research(
+    hidden_size=4096,       # Model width
+    num_layers=40,          # Model depth
+    num_heads=32,           # Attention parallelism
+    intermediate_size=14336,  # FFN width (~3.5x hidden_size)
+)
+
+# From reference - start with a model size, override specific params
+config = TritterConfig.for_research(
+    model_size="7B",        # Use 7B as base (4096 hidden, 32 layers)
+    num_layers=40,          # But make it deeper
+    num_kv_heads=4,         # And use more aggressive GQA (8:1 ratio)
+)
+```
+
+**Key parameters for research**:
+
+| Parameter | Purpose | Typical Values | Constraints |
+|-----------|---------|----------------|-------------|
+| `hidden_size` | Model width | 2048-8192 | Must divide by `num_heads` |
+| `num_layers` | Model depth | 16-80 | More = better quality, slower |
+| `num_heads` | Attention parallelism | 16-64 | `hidden_size / num_heads` = head_dim (64-128) |
+| `num_kv_heads` | GQA KV heads | 2-32 | Must divide `num_heads` evenly |
+| `intermediate_size` | FFN width | 2.5-4x `hidden_size` | Larger = more capacity |
+| `vocab_size` | Vocabulary size | 264-131072 | Must be >= 264 |
+| `max_position_embeddings` | Max context | 4096-1048576 | Longer = more memory |
+
+**Memory impact**:
+
+```python
+# Check if your custom config fits target hardware
+config = TritterConfig.for_research(hidden_size=5120, num_layers=48, num_heads=40)
+
+# Detailed memory breakdown
+mem = config.estimate_memory(batch_size=1)
+print(mem.summary())
+
+# Hardware recommendations
+rec = config.get_hardware_recommendation(target_vram_gb=16.0)
+print(f"Min VRAM: {rec.min_vram_inference_gb:.1f} GB")
+print(f"Use streaming: {rec.use_layer_streaming}")
+```
+
+**Common research configurations**:
+
+```python
+# Wider-shallower (fewer layers, more params per layer)
+config = TritterConfig.for_research(
+    hidden_size=5120,
+    num_layers=24,
+    num_heads=40,
+    intermediate_size=13824,
+)
+
+# Narrower-deeper (more layers, fewer params per layer)
+config = TritterConfig.for_research(
+    hidden_size=3072,
+    num_layers=48,
+    num_heads=24,
+    intermediate_size=8192,
+)
+
+# Ultra-long context with sliding window
+config = TritterConfig.for_research(
+    model_size="7B",
+    max_position_embeddings=1048576,  # 1M tokens
+    use_sliding_window=True,
+    sliding_window_size=4096,
+)
+
+# Minimal ablation model
+config = TritterConfig.for_research(
+    hidden_size=512,
+    num_layers=8,
+    num_heads=8,
+    intermediate_size=1376,
+    vocab_size=1024,
+)
+```
+
+**Validation errors** provide clear guidance:
+
+```python
+# Invalid: head dimension not integer
+config = TritterConfig.for_research(
+    hidden_size=4000,
+    num_layers=32,
+    num_heads=32,  # 4000 / 32 = 125 (not a clean division)
+)
+# ValueError: hidden_size (4000) must be divisible by num_heads (32).
+# Try adjusting num_heads to divide evenly (e.g., 31 heads for head_dim=64)
+
+# Invalid: GQA ratio not integer
+config = TritterConfig.for_research(
+    model_size="7B",  # 32 query heads
+    num_kv_heads=5,   # 32 / 5 = 6.4 (not evenly divisible)
+)
+# ValueError: num_heads (32) must be divisible by num_kv_heads (5) for GQA.
+# Try num_kv_heads = [1, 2, 4, 8, 16]
+```
 
 ## Training Data Strategy
 
@@ -211,8 +505,10 @@ From [considerations.md](docs/considerations.md):
 |----------|---------|
 | [ROADMAP.md](docs/ROADMAP.md) | Current status and planned work |
 | [TRAINING_STRATEGY.md](docs/TRAINING_STRATEGY.md) | Persona, data mix, alignment philosophy |
-| [SPEC-007](docs/specs/SPEC-007-dataset-quality-gates.md) | Security and quality gates for datasets |
-| [ADR-002](docs/adr/002-progressive-layer-loading.md) | Progressive layer loading decision |
 | [SPEC-006](docs/specs/SPEC-006-progressive-layer-loading.md) | Layer streaming implementation spec |
+| [SPEC-007](docs/specs/SPEC-007-dataset-quality-gates.md) | Security and quality gates for datasets |
+| [SPEC-009](docs/specs/SPEC-009-packed-ternary-inference.md) | Packed ternary weights (2-bit encoding) |
+| [SPEC-010](docs/specs/SPEC-010-lora-finetuning.md) | LoRA/QLoRA memory-efficient fine-tuning |
+| [ADR-002](docs/adr/002-progressive-layer-loading.md) | Progressive layer loading decision |
 | [project-plan.md](docs/project-plan.md) | Full technical blueprint |
 | [considerations.md](docs/considerations.md) | Research on transformer alternatives |

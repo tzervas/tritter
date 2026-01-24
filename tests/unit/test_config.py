@@ -23,14 +23,21 @@ class TestTritterConfig:
     """Test suite for TritterConfig class."""
 
     def test_default_config_3b(self) -> None:
-        """Test default 3B model configuration."""
+        """Test default 3B model configuration.
+
+        Why: Uses centralized model specs from model_specs.py. 3B is the default
+        consumer GPU model with balanced architecture for RTX 3080/4070 class GPUs.
+        """
+        from tritter.core.model_specs import get_model_spec
+
         config = TritterConfig()
+        spec = get_model_spec("3B")
 
         assert config.model_size == "3B"
-        assert config.hidden_size == 2048
-        assert config.num_layers == 24
-        assert config.num_heads == 16
-        assert config.head_dim == 128
+        assert config.hidden_size == spec.hidden_size
+        assert config.num_layers == spec.num_layers
+        assert config.num_heads == spec.num_heads
+        assert config.head_dim == spec.effective_head_dim
         assert config.max_position_embeddings == 131072  # 128K
 
     def test_config_7b(self) -> None:
@@ -235,17 +242,19 @@ class TestTritterConfig:
         assert config.intermediate_size == 12000  # Preserved user value
 
     def test_7b_auto_scales_default_intermediate_size(self) -> None:
-        """Test that 7B model auto-scales intermediate_size when at default ratio.
+        """Test that 7B model auto-scales intermediate_size from spec.
 
-        Validates that when intermediate_size is at the default 4x ratio (not explicitly
-        customized), it gets auto-scaled along with hidden_size for 7B models.
+        Why: Uses centralized model specs from model_specs.py. 7B spec defines
+        optimized FFN dimensions (11008) following LLaMA-7B architecture.
         """
-        # When not explicitly set, should auto-scale (8192 -> 16384)
+        from tritter.core.model_specs import get_model_spec
+
         config = TritterConfig(model_size="7B")
+        spec = get_model_spec("7B")
 
         assert config.model_size == "7B"
-        assert config.hidden_size == 4096
-        assert config.intermediate_size == 16384  # Auto-scaled to 4x 4096
+        assert config.hidden_size == spec.hidden_size
+        assert config.intermediate_size == spec.intermediate_size  # From spec
 
     def test_7b_with_custom_hidden_and_intermediate_size(self) -> None:
         """Test 7B with both custom hidden_size and intermediate_size.

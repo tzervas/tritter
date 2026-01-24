@@ -7,20 +7,19 @@ repository cloning is expensive and network-dependent. These tests use
 mock files to validate the extraction and validation logic.
 """
 
+# Import from scripts directory
+import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-# Import from scripts directory
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from scripts.triton_extraction.extract_kernels import (
-    ExtractionResult,
-    RepositoryConfig,
-    TritonExtractor,
     REPOSITORIES,
+    ExtractionResult,
+    TritonExtractor,
 )
 
 

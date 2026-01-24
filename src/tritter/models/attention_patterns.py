@@ -189,9 +189,9 @@ def document_mask(doc_ids: torch.Tensor) -> Callable[[int, int, int, int], bool]
             True if query and key belong to the same document (can attend).
             False if query and key belong to different documents (mask out).
 
-        Why: When called via vmap, b/q_idx/kv_idx are tensors not ints. The
-        comparison returns a bool tensor which FlexAttention handles correctly.
-        When called directly (for testing), we convert to Python bool.
+        Why: FlexAttention uses vmap to vectorize this function. We return the
+        comparison result directly (either bool for direct calls or tensor for vmap).
+        Note: .item() cannot be used here as it's incompatible with vmap.
         """
         # Extract document IDs for query and key positions in this batch
         # Note: When vmapped, b and indices are tensors, so indexing returns tensors
@@ -199,11 +199,8 @@ def document_mask(doc_ids: torch.Tensor) -> Callable[[int, int, int, int], bool]
         key_doc = doc_ids[b, kv_idx]
 
         # Only attend within same document
-        result = query_doc == key_doc
-        # Convert to Python bool if it's a 0-dim tensor (direct call), leave as tensor for vmap
-        if isinstance(result, torch.Tensor) and result.ndim == 0:
-            return bool(result.item())
-        return result
+        # Return comparison result directly - FlexAttention handles both bool and tensor
+        return query_doc == key_doc  # type: ignore[return-value]
 
     return _document_mask
 

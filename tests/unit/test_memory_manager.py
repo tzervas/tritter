@@ -36,7 +36,11 @@ class TestMemoryManager:
 
         assert manager.config == config
         assert manager.device.type == "cuda"
-        assert manager.budget_bytes == int(config.gpu_memory_budget_gb * 1024**3)
+        # Budget may be adjusted for OS overhead (auto_detect_budget=True by default)
+        # So budget_bytes should be <= configured budget
+        config_budget_bytes = int(config.gpu_memory_budget_gb * 1024**3)
+        assert manager.budget_bytes <= config_budget_bytes
+        assert manager.budget_bytes > 0
         assert manager.allocated_bytes == 0
         assert manager.available_bytes == manager.budget_bytes
 

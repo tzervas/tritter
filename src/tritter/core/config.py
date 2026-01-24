@@ -9,8 +9,13 @@ than modifying code throughout the codebase. The __post_init__ validation catche
 at config creation time rather than runtime during training, saving compute time.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from tritter.core.model_specs import HardwareRecommendation, MemoryEstimate, ModelSpec
 
 
 @dataclass
@@ -29,6 +34,25 @@ class TritterConfig:
     The 3B/7B sizing follows proven architectures (Llama, Mistral) while BitNet quantization
     makes 7B feasible on consumer hardware. Context window of 128K enables repository-level
     code understanding and long-form multimodal documents.
+
+    Usage Modes:
+
+    **Developer mode (simple)** - Pick a model size and everything auto-configures:
+    ```python
+    config = TritterConfig(model_size="7B")  # All params set automatically
+    ```
+
+    **Researcher mode (advanced)** - Full manual control over architecture:
+    ```python
+    config = TritterConfig.for_research(
+        hidden_size=4096,
+        num_layers=40,
+        num_heads=32,
+        intermediate_size=14336,
+    )
+    ```
+
+    See TritterConfig.for_research() for full documentation on custom architectures.
 
     Attributes:
         model_size: Model size variant ('3B' or '7B') - auto-configures layer counts
@@ -50,10 +74,11 @@ class TritterConfig:
     """
 
     # Model architecture
-    model_size: Literal["3B", "7B"] = "3B"
+    model_size: Literal["1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"] = "3B"
     hidden_size: int = 2048
     num_layers: int = 24
     num_heads: int = 16
+    num_kv_heads: int | None = None  # None = MHA, set for GQA
     intermediate_size: int = 8192
     max_position_embeddings: int = 131072  # 128K context
     vocab_size: int = 65536
@@ -197,38 +222,19 @@ class TritterConfig:
         """Validate configuration and set derived attributes.
 
         Why: Automatic configuration based on model_size prevents manual errors and ensures
-        consistent scaling. The 7B config doubles hidden_size (2048→4096) and increases layers
-        (24→32) following standard scaling laws. Validation catches incompatible settings early:
+        consistent scaling. Uses centralized model specs for all sizes (1B-70B) following
+        standard scaling laws from Llama/Mistral architectures. Validation catches
+        incompatible settings early:
 
         - hidden_size must divide evenly by num_heads to avoid fractional head dimensions
         - Only supported modalities are allowed to prevent integration issues
 
         These assertions fail fast at config creation rather than during expensive training.
         """
-        # Auto-configure 7B variant
-        # Why: 7B uses wider layers (4096 hidden) and deeper stack (32 layers) vs 3B.
-        # This follows proven scaling from Llama-3/Mistral architectures.
-        if self.model_size == "7B":
-            # Check if intermediate_size is at default ratio before updating hidden_size
-            # Why: We need to determine if intermediate_size was explicitly set by checking
-            # if it maintains the 4x ratio to hidden_size. This must happen BEFORE we update
-            # hidden_size, otherwise we lose the ability to detect the default.
-            is_intermediate_default = self.intermediate_size == 4 * self.hidden_size
-
-            # Only override if still at default 3B values (preserve user-specified values)
-            if self.hidden_size == 2048:
-                self.hidden_size = 4096
-            if self.num_layers == 24:
-                self.num_layers = 32
-            if self.num_heads == 16:
-                self.num_heads = 32
-
-            # Only update intermediate_size if it was at the default 4x ratio
-            # Why: If user explicitly set intermediate_size (e.g., intermediate_size=12000
-            # with model_size="7B"), we preserve their choice. We only auto-scale if they
-            # left it at the default ratio.
-            if is_intermediate_default:
-                self.intermediate_size = 4 * self.hidden_size
+        # Auto-configure from model specs if not using explicit values
+        # Why: Centralized specs ensure consistent architecture across all sizes (1B-70B).
+        # We only override if values are at 3B defaults (preserving user-specified values).
+        self._apply_model_spec()
 
         # Ensure head dimension is valid
         # Why: Multi-head attention splits hidden_size across heads. Non-divisible configs
@@ -287,6 +293,71 @@ class TritterConfig:
             f"(8 special tokens + 256 byte values for byte-level encoding)"
         )
 
+    def _apply_model_spec(self) -> None:
+        """Apply model specification based on model_size.
+
+        Why: Centralizes architecture configurations in model_specs.py. We only override
+        values that are at their 3B defaults, preserving any user-specified overrides.
+
+        Important: If hidden_size is customized, we don't apply spec's num_heads because
+        they may be incompatible. Users who customize hidden_size should also specify num_heads.
+        """
+        # Import here to avoid circular dependency
+        from tritter.core.model_specs import get_model_spec
+
+        # Skip if already at non-default values (user specified)
+        # Default 3B values that indicate auto-configuration is needed
+        defaults = {
+            "hidden_size": 2048,
+            "num_layers": 24,
+            "num_heads": 16,
+            "intermediate_size": 8192,
+        }
+
+        # Check if we're using 3B or need to apply a different spec
+        if self.model_size == "3B":
+            # Apply 3B spec values (may differ from hardcoded defaults)
+            spec = get_model_spec("3B")
+        else:
+            spec = get_model_spec(self.model_size)
+
+        # Track whether hidden_size was customized by user
+        hidden_size_customized = self.hidden_size != defaults["hidden_size"]
+
+        # Only override if at default 3B values
+        if not hidden_size_customized:
+            self.hidden_size = spec.hidden_size
+
+        if self.num_layers == defaults["num_layers"]:
+            self.num_layers = spec.num_layers
+
+        # Only apply spec's num_heads if hidden_size wasn't customized
+        # Why: Customized hidden_size may not be compatible with spec's num_heads
+        if self.num_heads == defaults["num_heads"] and not hidden_size_customized:
+            self.num_heads = spec.num_heads
+
+        # Check intermediate_size default ratio
+        is_intermediate_default = self.intermediate_size == defaults["intermediate_size"]
+        if is_intermediate_default:
+            self.intermediate_size = spec.intermediate_size
+
+        # Apply GQA configuration if spec uses it and user didn't override
+        # Only apply if hidden_size wasn't customized (GQA head counts are tied to spec)
+        if (
+            self.num_kv_heads is None
+            and spec.num_kv_heads is not None
+            and not hidden_size_customized
+        ):
+            self.num_kv_heads = spec.num_kv_heads
+
+        # Auto-enable layer streaming for large models if not explicitly set
+        # Why: Models 30B+ typically won't fit on a single 16GB GPU without streaming
+        large_model_sizes = {"30B", "33B", "40B", "65B", "70B"}
+        if self.model_size in large_model_sizes and self.max_memory_gb <= 24:
+            if not self.use_layer_streaming:
+                # Note: Don't auto-enable, just set reasonable defaults if enabled
+                pass
+
     @property
     def head_dim(self) -> int:
         """Dimension of each attention head.
@@ -300,3 +371,322 @@ class TritterConfig:
             int: Dimension per attention head (hidden_size // num_heads)
         """
         return self.hidden_size // self.num_heads
+
+    @property
+    def effective_num_kv_heads(self) -> int:
+        """Number of key-value heads (equals num_heads for MHA).
+
+        Why: Grouped Query Attention (GQA) uses fewer KV heads than query heads
+        to reduce KV-cache memory. This property provides the effective count.
+        """
+        return self.num_kv_heads if self.num_kv_heads is not None else self.num_heads
+
+    @property
+    def uses_gqa(self) -> bool:
+        """Whether this config uses Grouped Query Attention.
+
+        Why: GQA reduces memory for KV-cache by sharing KV heads across query heads.
+        Larger models (7B+) typically use GQA for memory efficiency.
+        """
+        return self.num_kv_heads is not None and self.num_kv_heads < self.num_heads
+
+    def get_model_spec(self) -> ModelSpec:
+        """Get the model specification for this config's size.
+
+        Returns:
+            ModelSpec with architecture details
+        """
+        from tritter.core.model_specs import get_model_spec
+
+        return get_model_spec(self.model_size)
+
+    def estimate_memory(self, batch_size: int = 1) -> MemoryEstimate:
+        """Estimate memory requirements for this config.
+
+        Args:
+            batch_size: Batch size for KV-cache estimation
+
+        Returns:
+            MemoryEstimate with detailed breakdown
+        """
+        from tritter.core.model_specs import estimate_memory
+
+        return estimate_memory(self.get_model_spec(), batch_size)
+
+    def get_hardware_recommendation(
+        self,
+        target_vram_gb: float | None = None,
+        target_gpus: int = 1,
+        for_training: bool = False,
+    ) -> HardwareRecommendation:
+        """Get hardware recommendations for this config.
+
+        Args:
+            target_vram_gb: Available VRAM per GPU (defaults to max_memory_gb)
+            target_gpus: Number of available GPUs
+            for_training: Whether this is for training (vs inference)
+
+        Returns:
+            HardwareRecommendation with configuration guidance
+        """
+        from tritter.core.model_specs import recommend_hardware
+
+        vram = target_vram_gb if target_vram_gb is not None else float(self.max_memory_gb)
+        return recommend_hardware(
+            self.model_size,
+            target_vram_gb=vram,
+            target_gpus=target_gpus,
+            for_training=for_training,
+        )
+
+    def total_params(self) -> int:
+        """Estimate total parameter count.
+
+        Returns:
+            Total number of parameters
+        """
+        return self.get_model_spec().total_params()
+
+    def total_params_billions(self) -> float:
+        """Total parameters in billions.
+
+        Returns:
+            Parameter count in billions
+        """
+        return self.total_params() / 1e9
+
+    @classmethod
+    def for_research(
+        cls,
+        *,
+        # Core architecture (required for custom configs)
+        hidden_size: int | None = None,
+        num_layers: int | None = None,
+        num_heads: int | None = None,
+        # Optional architecture parameters
+        num_kv_heads: int | None = None,
+        intermediate_size: int | None = None,
+        vocab_size: int = 65536,
+        max_position_embeddings: int = 131072,
+        # Model size reference (optional, for sensible defaults)
+        model_size: Literal["1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"]
+        | None = None,
+        # All other config parameters can be overridden
+        **kwargs,
+    ) -> TritterConfig:
+        """Create a research configuration with full manual control over architecture.
+
+        Why: Researchers need fine-grained control over architecture hyperparameters to explore
+        design space (e.g., wider-shallower vs narrower-deeper models, different head counts,
+        intermediate size ratios). This method provides a clean API for custom architectures
+        while still offering sensible defaults from standard model sizes.
+
+        Two modes of operation:
+
+        1. **From scratch** - Specify hidden_size, num_layers, num_heads explicitly:
+           ```python
+           config = TritterConfig.for_research(
+               hidden_size=3072,      # Custom width
+               num_layers=28,         # Custom depth
+               num_heads=24,          # Custom parallelism
+               intermediate_size=8192,  # Custom FFN width
+           )
+           ```
+
+        2. **From reference** - Start from a model_size spec, then override specific params:
+           ```python
+           config = TritterConfig.for_research(
+               model_size="7B",       # Use 7B as base
+               num_layers=40,         # But make it deeper
+               intermediate_size=14336,  # And wider FFN
+           )
+           ```
+
+        Parameters to tune for research:
+
+        **Width vs Depth Trade-offs:**
+        - hidden_size: Model width. Larger = more expressiveness, more memory.
+          Typical: 2048 (small), 4096 (medium), 8192 (large)
+        - num_layers: Model depth. More layers = more compute, better compositionality.
+          Typical: 16-32 (small), 32-60 (medium), 60-80 (large)
+
+        **Attention Architecture:**
+        - num_heads: Parallel attention heads. Must divide hidden_size evenly.
+          Standard head_dim is 64-128, so num_heads = hidden_size / head_dim.
+          Example: hidden_size=4096 → 32 heads (128-dim) or 64 heads (64-dim)
+        - num_kv_heads: For Grouped Query Attention (GQA). Set lower than num_heads
+          to reduce KV-cache memory. None = MHA (num_kv_heads == num_heads).
+          Typical GQA ratios: 4:1, 8:1 (e.g., 32 query heads, 8 KV heads)
+
+        **FFN Width:**
+        - intermediate_size: FFN hidden dimension. Typically 2.5-4x hidden_size.
+          Larger = more capacity but slower and more memory.
+          Llama uses ~2.7x, Mistral uses ~2.67x, older models use 4x.
+
+        **Context Window:**
+        - max_position_embeddings: Maximum sequence length. 128K default.
+          Longer = more memory for positional embeddings and KV-cache.
+          Consider sliding_window_size for very long contexts.
+
+        **Vocabulary:**
+        - vocab_size: Must be >= 264 (8 special + 256 bytes). Larger vocabs
+          improve compression but increase embedding table size.
+
+        Constraints and validation:
+
+        1. **hidden_size % num_heads == 0** - Head dimension must be integer.
+           Standard head_dim: 64, 96, 128, or 256.
+
+        2. **num_kv_heads divides num_heads** - For GQA, query heads must be
+           evenly distributed across KV heads. Example: 32 Q heads / 8 KV heads = 4:1.
+
+        3. **vocab_size >= 264** - Minimum for byte-level encoding.
+
+        4. **intermediate_size > 0** - FFN must have positive width.
+
+        Memory implications:
+
+        - **Model parameters** ≈ 12 * num_layers * hidden_size²
+          (rough estimate, actual depends on vocab_size and intermediate_size)
+        - **KV-cache per token** = 2 * num_layers * num_kv_heads * head_dim * dtype_bytes
+        - **Activations** ≈ batch_size * seq_len * hidden_size * 12
+        - **Packed ternary weights** ≈ total_params * 0.25 bytes
+
+        Use config.estimate_memory() and config.get_hardware_recommendation() to check
+        if your custom architecture fits target hardware.
+
+        Examples:
+
+        ```python
+        # Wider-shallower model (more parameters in fewer layers)
+        config = TritterConfig.for_research(
+            hidden_size=5120,
+            num_layers=24,
+            num_heads=40,
+            intermediate_size=13824,
+        )
+
+        # Narrower-deeper model (fewer parameters across more layers)
+        config = TritterConfig.for_research(
+            hidden_size=3072,
+            num_layers=48,
+            num_heads=24,
+            intermediate_size=8192,
+        )
+
+        # Custom GQA ratio (16:1 for extreme KV-cache reduction)
+        config = TritterConfig.for_research(
+            model_size="7B",       # Base: 32 heads, 8 KV heads (4:1)
+            num_kv_heads=2,        # Override: 32 heads, 2 KV heads (16:1)
+        )
+
+        # Ultra-long context with sliding window
+        config = TritterConfig.for_research(
+            model_size="7B",
+            max_position_embeddings=1048576,  # 1M tokens
+            use_sliding_window=True,
+            sliding_window_size=4096,
+        )
+
+        # Minimal model for ablation studies
+        config = TritterConfig.for_research(
+            hidden_size=512,
+            num_layers=8,
+            num_heads=8,
+            intermediate_size=1376,
+            vocab_size=1024,  # Small vocab for faster experiments
+        )
+        ```
+
+        Args:
+            hidden_size: Hidden dimension (required if model_size not given)
+            num_layers: Number of transformer layers (required if model_size not given)
+            num_heads: Number of attention heads (required if model_size not given)
+            num_kv_heads: Number of KV heads for GQA (None = MHA)
+            intermediate_size: FFN intermediate dimension (defaults to ~2.7x hidden_size)
+            vocab_size: Vocabulary size (default 65536)
+            max_position_embeddings: Maximum context length (default 128K)
+            model_size: Reference model size for defaults (optional)
+            **kwargs: Any other TritterConfig parameters (dropout, use_flash_attention, etc.)
+
+        Returns:
+            TritterConfig with custom architecture
+
+        Raises:
+            ValueError: If required parameters are missing or constraints are violated
+        """
+        # Determine base configuration
+        if model_size is not None:
+            # Start from model spec
+            from tritter.core.model_specs import get_model_spec
+
+            spec = get_model_spec(model_size)
+
+            # Use spec values as defaults, but allow overrides
+            hidden_size = hidden_size or spec.hidden_size
+            num_layers = num_layers or spec.num_layers
+            num_heads = num_heads or spec.num_heads
+            if num_kv_heads is None and spec.num_kv_heads is not None:
+                num_kv_heads = spec.num_kv_heads
+            if intermediate_size is None:
+                intermediate_size = spec.intermediate_size
+        else:
+            # Fully manual mode - all required params must be provided
+            if hidden_size is None:
+                raise ValueError(
+                    "hidden_size is required when model_size is not specified. "
+                    "Either provide model_size as a base, or specify hidden_size/num_layers/num_heads."
+                )
+            if num_layers is None:
+                raise ValueError(
+                    "num_layers is required when model_size is not specified. "
+                    "Either provide model_size as a base, or specify hidden_size/num_layers/num_heads."
+                )
+            if num_heads is None:
+                raise ValueError(
+                    "num_heads is required when model_size is not specified. "
+                    "Either provide model_size as a base, or specify hidden_size/num_layers/num_heads."
+                )
+
+            # Default intermediate_size to ~2.7x hidden_size if not provided
+            if intermediate_size is None:
+                intermediate_size = int(hidden_size * 2.7)
+
+        # Validate constraints early
+        if hidden_size % num_heads != 0:
+            raise ValueError(
+                f"hidden_size ({hidden_size}) must be divisible by num_heads ({num_heads}). "
+                f"Current head_dim would be {hidden_size / num_heads:.2f}, which is not an integer. "
+                f"Try adjusting num_heads to divide evenly (e.g., {hidden_size // 64} heads for "
+                f"head_dim=64, or {hidden_size // 128} heads for head_dim=128)."
+            )
+
+        if num_kv_heads is not None:
+            if num_kv_heads > num_heads:
+                raise ValueError(
+                    f"num_kv_heads ({num_kv_heads}) cannot exceed num_heads ({num_heads})"
+                )
+            if num_heads % num_kv_heads != 0:
+                raise ValueError(
+                    f"num_heads ({num_heads}) must be divisible by num_kv_heads ({num_kv_heads}) "
+                    f"for Grouped Query Attention. Current ratio: {num_heads / num_kv_heads:.2f}. "
+                    f"Try num_kv_heads = {[n for n in [1, 2, 4, 8, 16] if num_heads % n == 0]}"
+                )
+
+        # Build config with manual overrides
+        # Use a base model_size for non-architecture defaults, but override architecture params
+        base_model_size = model_size if model_size is not None else "3B"
+
+        config = cls(
+            model_size=base_model_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            num_kv_heads=num_kv_heads,
+            intermediate_size=intermediate_size,
+            vocab_size=vocab_size,
+            max_position_embeddings=max_position_embeddings,
+            **kwargs,
+        )
+
+        return config
