@@ -26,6 +26,9 @@ classifiers = [
 ]
 
 dependencies = [
+    # NOTE: For RTX 50-series (Blackwell, SM_120), install PyTorch nightly separately:
+    #   uv pip install torch triton --pre --index-url https://download.pytorch.org/whl/nightly/cu128
+    # See docs/HARDWARE_REQUIREMENTS.md and docs/adr/004-blackwell-gpu-support.md
     "torch>=2.5.0",
     "numpy>=1.24.0",
     "transformers>=4.35.0",
