@@ -145,8 +145,8 @@ def create_training_config(
     effective_batch_tokens = batch_size * seq_length * grad_accum
 
     # Calculate steps
-    total_steps = total_tokens // effective_batch_tokens
-    warmup_steps = warmup_tokens // effective_batch_tokens
+    total_steps = max(1, total_tokens // effective_batch_tokens)
+    warmup_steps = min(warmup_tokens // effective_batch_tokens, total_steps // 10)  # Cap warmup at 10% of total
 
     # Learning rate based on model size
     model_b = float(model_size.upper().rstrip("B"))
@@ -167,14 +167,10 @@ def create_training_config(
         gradient_accumulation_steps=grad_accum,
         max_grad_norm=1.0,
         weight_decay=0.1,
-        adam_beta1=0.9,
-        adam_beta2=0.95,
-        adam_epsilon=1e-8,
-        gradient_checkpointing=True,
-        mixed_precision="bf16",
         save_steps=5000,
         eval_steps=1000,
-        logging_steps=100,
+        log_steps=100,
+        use_amp=True,
     )
 
 
@@ -246,7 +242,10 @@ def main():
         sys.exit(1)
 
     # Estimate training memory (weights + gradients + optimizer + activations)
-    training_memory = spec.packed_size_gb * 20  # Rough estimate for full training
+    # BitNet 1.58-bit = 2 bits per weight, but training uses full precision
+    params = spec.total_params()
+    packed_size_gb = (params * 2) / 8 / (1024**3)  # 2-bit packed weights
+    training_memory = packed_size_gb * 20  # Rough estimate for full training
     fits, message = check_memory_fit(training_memory)
 
     if not fits:
@@ -267,8 +266,8 @@ def main():
 
     print("Model config:")
     print(f"  Hidden dim:  {model_config.hidden_size}")
-    print(f"  Layers:      {model_config.num_hidden_layers}")
-    print(f"  Heads:       {model_config.num_attention_heads}")
+    print(f"  Layers:      {model_config.num_layers}")
+    print(f"  Heads:       {model_config.num_heads}")
     print()
     print("Training config:")
     print(f"  Batch size:  {train_config.batch_size}")
