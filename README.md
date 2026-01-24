@@ -52,19 +52,33 @@ Production inference will use KNN/VQ rounding instead of argmax token selection,
 
 ## Installation
 
-Requires Python 3.12+.
+Requires Python 3.12 or 3.13, and CUDA 12.1+ for GPU acceleration.
+
+### Basic Installation
 
 ```bash
 # Clone repository
 git clone https://github.com/tzervas/tritter.git
 cd tritter
 
-# Install with development dependencies (recommended: use uv)
-uv pip install -e ".[dev]"
+# Create virtual environment (Python 3.13 recommended)
+uv venv --python 3.13 .venv
+source .venv/bin/activate
 
-# Or with pip
-pip install -e ".[dev]"
+# Install PyTorch with CUDA support
+uv pip install torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+
+# Install with development dependencies
+uv pip install -e ".[dev]"
 ```
+
+### Verify CUDA Setup
+
+```bash
+python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0)}')"
+```
+
+See [`docs/CUDA_SETUP.md`](docs/CUDA_SETUP.md) for detailed CUDA configuration and troubleshooting.
 
 ## Quick Start
 

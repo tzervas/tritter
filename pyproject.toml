@@ -3,7 +3,7 @@ name = "tritter"
 version = "0.1.0"
 description = "Multimodal AI model with BitNet 1.58-bit quantization, 128K context, any-to-any (text/code/image/audio) fusion"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 license = {text = "MIT"}
 authors = [
     {name = "Tyler Zervas", email = "tz-dev@vectorweight.com"}
@@ -21,16 +21,17 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
 dependencies = [
-    "torch>=2.1.0",
+    "torch>=2.5.0",
     "numpy>=1.24.0",
     "transformers>=4.35.0",
     "tokenizers>=0.15.0",
     "einops>=0.7.0",
-    "triton>=2.1.0",
+    "triton>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -67,7 +68,7 @@ packages = ["src/tritter", "devtools"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = [
@@ -89,7 +90,7 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
