@@ -309,7 +309,6 @@ def print_feasibility_matrix() -> None:
         needs_streaming = False
 
         for r in results:
-            ctx_k = r.context_length // 1024
             if r.fits:
                 row += f" {'✓':>7}"
             else:

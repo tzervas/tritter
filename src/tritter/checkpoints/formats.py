@@ -264,6 +264,7 @@ def _load_safetensors(
                     use_bitnet=m.get("use_bitnet", "False") == "True",
                 )
     except Exception:
+        # Metadata parsing is optional - continue with empty metadata if parsing fails
         pass
 
     return state_dict, metadata
@@ -412,7 +413,6 @@ def _write_gguf(
             f.write(struct.pack("<f", value))
 
     # Write tensor info
-    tensor_data_start = f.tell()
     alignment = 32  # GGUF alignment
 
     tensor_infos = []
@@ -456,7 +456,7 @@ def _write_gguf(
     f.write(b"\x00" * padding)
 
     # Write tensor data
-    for name, tensor in state_dict.items():
+    for _name, tensor in state_dict.items():
         # Align
         current_pos = f.tell()
         padding = (alignment - (current_pos % alignment)) % alignment

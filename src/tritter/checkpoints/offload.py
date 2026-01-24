@@ -88,7 +88,7 @@ def offload_checkpoint(
 
     # Run rsync
     print(f"Offloading {local_path.name} to {remote_host}...")
-    result = subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True)
 
     # Verify upload
     verify_cmd = ["ssh", remote_host, f"ls -la {remote_dir}/{local_path.name}"]

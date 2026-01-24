@@ -105,7 +105,7 @@ def main() -> None:
 
     # Check model fit
     if args.check:
-        from tritter.quantization.model_specs import get_model_spec
+        from tritter.core.model_specs import get_model_spec
 
         model_size = args.check.upper()
         if not model_size.endswith("B"):

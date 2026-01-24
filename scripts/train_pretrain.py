@@ -31,14 +31,11 @@ Output:
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader, IterableDataset
 
 # Add src to path for development
@@ -241,7 +238,7 @@ def main():
     print(f"{'='*60}\n")
 
     # Check memory fit
-    from tritter.quantization.model_specs import get_model_spec
+    from tritter.core.model_specs import get_model_spec
     spec = get_model_spec(args.model)
     if spec is None:
         print(f"Error: Unknown model size '{args.model}'")
@@ -318,7 +315,9 @@ def main():
     # Create trainer
     trainer = Trainer(
         model=model,
-        config=train_config,
+        model_config=model_config,
+        training_config=train_config,
+        train_dataloader=dataloader,
     )
 
     # Resume if specified
@@ -337,10 +336,7 @@ def main():
     print()
 
     try:
-        trainer.train(
-            train_dataloader=dataloader,
-            output_dir=str(model_dir),
-        )
+        trainer.train()
     except KeyboardInterrupt:
         print("\nTraining interrupted!")
         save_path = model_dir / f"interrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}"

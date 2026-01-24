@@ -334,6 +334,140 @@ See [API_CONVENTIONS.md](docs/API_CONVENTIONS.md) for interface schemas:
 - Error messages must include actual and expected values
 - Type hints required for all public APIs
 
+### Configuration API: Developer vs Researcher Modes
+
+TritterConfig supports two distinct usage patterns:
+
+#### Developer Mode (Simple)
+
+Pick a model size and all architecture parameters auto-configure from proven specs:
+
+```python
+from tritter import TritterConfig
+
+# Simplest usage - everything auto-configured
+config = TritterConfig(model_size="7B")
+
+# Override specific optimization flags
+config = TritterConfig(
+    model_size="7B",
+    use_layer_streaming=True,    # Enable for models that don't fit VRAM
+    int4_kv_cache=True,           # 4x KV-cache reduction
+    max_position_embeddings=32768,  # Reduce context to 32K
+)
+```
+
+**Supported sizes**: 1B, 3B, 7B, 10B, 13B, 30B, 33B, 40B, 65B, 70B
+
+Each size uses validated architecture parameters (hidden_size, num_layers, num_heads, etc.) from `model_specs.py`.
+
+#### Researcher Mode (Advanced)
+
+Full manual control for architecture exploration and ablation studies:
+
+```python
+# From scratch - specify all architecture params
+config = TritterConfig.for_research(
+    hidden_size=4096,       # Model width
+    num_layers=40,          # Model depth
+    num_heads=32,           # Attention parallelism
+    intermediate_size=14336,  # FFN width (~3.5x hidden_size)
+)
+
+# From reference - start with a model size, override specific params
+config = TritterConfig.for_research(
+    model_size="7B",        # Use 7B as base (4096 hidden, 32 layers)
+    num_layers=40,          # But make it deeper
+    num_kv_heads=4,         # And use more aggressive GQA (8:1 ratio)
+)
+```
+
+**Key parameters for research**:
+
+| Parameter | Purpose | Typical Values | Constraints |
+|-----------|---------|----------------|-------------|
+| `hidden_size` | Model width | 2048-8192 | Must divide by `num_heads` |
+| `num_layers` | Model depth | 16-80 | More = better quality, slower |
+| `num_heads` | Attention parallelism | 16-64 | `hidden_size / num_heads` = head_dim (64-128) |
+| `num_kv_heads` | GQA KV heads | 2-32 | Must divide `num_heads` evenly |
+| `intermediate_size` | FFN width | 2.5-4x `hidden_size` | Larger = more capacity |
+| `vocab_size` | Vocabulary size | 264-131072 | Must be >= 264 |
+| `max_position_embeddings` | Max context | 4096-1048576 | Longer = more memory |
+
+**Memory impact**:
+
+```python
+# Check if your custom config fits target hardware
+config = TritterConfig.for_research(hidden_size=5120, num_layers=48, num_heads=40)
+
+# Detailed memory breakdown
+mem = config.estimate_memory(batch_size=1)
+print(mem.summary())
+
+# Hardware recommendations
+rec = config.get_hardware_recommendation(target_vram_gb=16.0)
+print(f"Min VRAM: {rec.min_vram_inference_gb:.1f} GB")
+print(f"Use streaming: {rec.use_layer_streaming}")
+```
+
+**Common research configurations**:
+
+```python
+# Wider-shallower (fewer layers, more params per layer)
+config = TritterConfig.for_research(
+    hidden_size=5120,
+    num_layers=24,
+    num_heads=40,
+    intermediate_size=13824,
+)
+
+# Narrower-deeper (more layers, fewer params per layer)
+config = TritterConfig.for_research(
+    hidden_size=3072,
+    num_layers=48,
+    num_heads=24,
+    intermediate_size=8192,
+)
+
+# Ultra-long context with sliding window
+config = TritterConfig.for_research(
+    model_size="7B",
+    max_position_embeddings=1048576,  # 1M tokens
+    use_sliding_window=True,
+    sliding_window_size=4096,
+)
+
+# Minimal ablation model
+config = TritterConfig.for_research(
+    hidden_size=512,
+    num_layers=8,
+    num_heads=8,
+    intermediate_size=1376,
+    vocab_size=1024,
+)
+```
+
+**Validation errors** provide clear guidance:
+
+```python
+# Invalid: head dimension not integer
+config = TritterConfig.for_research(
+    hidden_size=4000,
+    num_layers=32,
+    num_heads=32,  # 4000 / 32 = 125 (not a clean division)
+)
+# ValueError: hidden_size (4000) must be divisible by num_heads (32).
+# Try adjusting num_heads to divide evenly (e.g., 31 heads for head_dim=64)
+
+# Invalid: GQA ratio not integer
+config = TritterConfig.for_research(
+    model_size="7B",  # 32 query heads
+    num_kv_heads=5,   # 32 / 5 = 6.4 (not evenly divisible)
+)
+# ValueError: num_heads (32) must be divisible by num_kv_heads (5) for GQA.
+# Try num_kv_heads = [1, 2, 4, 8, 16]
+```
+
 ## Training Data Strategy
 
 From [TRAINING_STRATEGY.md](docs/TRAINING_STRATEGY.md):

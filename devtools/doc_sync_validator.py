@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import importlib
 import re
 import sys
 from dataclasses import dataclass, field
