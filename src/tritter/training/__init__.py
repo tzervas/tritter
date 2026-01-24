@@ -3,6 +3,7 @@
 CURRENT STATUS: Basic token-prediction trainer implemented. Embedding prediction
 training (Coconut/LCM-style) planned for future curriculum learning phase.
 Data loading utilities (CodeDataset, StreamingCodeDataset) are implemented.
+LoRA/QLoRA support for memory-efficient fine-tuning is fully implemented.
 
 Why this module exists:
 Training an embedding-prediction model differs fundamentally from standard token-prediction
@@ -23,6 +24,14 @@ Implemented components:
 - DataConfig: Configuration for data loading hyperparameters
 - collate_fn: Dynamic padding collation function
 - create_dataloader: DataLoader factory with appropriate settings
+- LoRAConfig: Configuration for LoRA fine-tuning
+- LoRALinear: Low-rank adapter layer wrapping base layers
+- LoRATrainer: Trainer specialized for LoRA fine-tuning
+- apply_lora: Apply LoRA adapters to a model
+- get_lora_parameters: Get only LoRA parameters from a model
+- save_lora_adapters: Save LoRA adapter weights
+- load_lora_adapters: Load LoRA adapter weights
+- estimate_lora_memory: Estimate memory for LoRA fine-tuning
 
 Planned components (stubs):
 - EmbeddingPredictionLoss: Custom loss function for continuous space
@@ -48,6 +57,19 @@ from tritter.training.data import (
     StreamingCodeDataset,
     collate_fn,
     create_dataloader,
+)
+from tritter.training.lora import (
+    LoRAConfig,
+    LoRALinear,
+    LoRATrainer,
+    apply_lora,
+    count_parameters,
+    estimate_lora_memory,
+    get_lora_parameters,
+    get_trainable_parameters,
+    load_lora_adapters,
+    merge_lora_weights,
+    save_lora_adapters,
 )
 from tritter.training.trainer import Trainer, TrainingConfig, TrainingMetrics, TrainingProgress
 
@@ -103,7 +125,7 @@ class CurriculumScheduler:
         )
 
 
-# Export data loading utilities and trainer
+# Export data loading utilities, trainer, and LoRA
 __all__ = [
     # Data loading
     "CodeDataset",
@@ -116,6 +138,18 @@ __all__ = [
     "TrainingConfig",
     "TrainingMetrics",
     "TrainingProgress",
+    # LoRA fine-tuning
+    "LoRAConfig",
+    "LoRALinear",
+    "LoRATrainer",
+    "apply_lora",
+    "count_parameters",
+    "estimate_lora_memory",
+    "get_lora_parameters",
+    "get_trainable_parameters",
+    "load_lora_adapters",
+    "merge_lora_weights",
+    "save_lora_adapters",
 ]
 
 # TODO: Phase 6 - Export EmbeddingPredictionLoss and CurriculumScheduler

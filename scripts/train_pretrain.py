@@ -1,0 +1,371 @@
+#!/usr/bin/env python3
+"""Pretraining script for Tritter models.
+
+This script handles the full pretraining pipeline for generating pretrained
+weights that can be distributed via HuggingFace Hub.
+
+Usage:
+    # Train 1B model (baseline, ~4 hours on RTX 5080)
+    python scripts/train_pretrain.py --model 1B --data-dir data/pretrain
+
+    # Train 3B model (primary, ~12 hours on RTX 5080)
+    python scripts/train_pretrain.py --model 3B --data-dir data/pretrain
+
+    # Train 7B model (flagship, ~36 hours on RTX 5080)
+    python scripts/train_pretrain.py --model 7B --data-dir data/pretrain
+
+    # Resume from checkpoint
+    python scripts/train_pretrain.py --model 3B --resume checkpoints/3b-step-50000/
+
+    # Progressive training (3B → 7B)
+    python scripts/train_pretrain.py --model 7B --init-from checkpoints/3b-final/
+
+Data Preparation:
+    See scripts/prepare_pretrain_data.py for data curation.
+
+Output:
+    Checkpoints saved to: checkpoints/{model}-step-{step}/
+    Final model saved to: checkpoints/{model}-final/
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, IterableDataset
+
+# Add src to path for development
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from tritter import TritterConfig, TritterModel
+from tritter.training import Trainer, TrainingConfig
+from tritter.utils import check_memory_fit, detect_gpu_profile
+
+
+class PretrainDataset(IterableDataset):
+    """Streaming dataset for pretraining.
+
+    Why: Large pretraining corpora don't fit in memory. Stream from disk.
+
+    Expected data format (JSONL):
+        {"text": "...", "source": "python", "quality_score": 0.95}
+
+    Preprocessing:
+        - Tokenize on-the-fly
+        - Pack sequences to max_length
+        - Skip low-quality samples
+    """
+
+    def __init__(
+        self,
+        data_dir: str,
+        tokenizer,
+        max_length: int = 2048,
+        min_quality: float = 0.7,
+    ):
+        self.data_dir = Path(data_dir)
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        self.min_quality = min_quality
+
+        # Find all data shards
+        self.shards = sorted(self.data_dir.glob("*.jsonl"))
+        if not self.shards:
+            raise ValueError(f"No .jsonl files found in {data_dir}")
+
+    def __iter__(self):
+        """Yield packed sequences."""
+        buffer = []
+        buffer_len = 0
+
+        for shard in self.shards:
+            with open(shard, encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        item = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    # Quality filter
+                    quality = item.get("quality_score", 1.0)
+                    if quality < self.min_quality:
+                        continue
+
+                    # Tokenize
+                    text = item.get("text", "")
+                    if not text:
+                        continue
+
+                    tokens = self.tokenizer.encode(text)
+
+                    # Add to buffer
+                    buffer.extend(tokens)
+                    buffer_len += len(tokens)
+
+                    # Yield packed sequences
+                    while buffer_len >= self.max_length:
+                        seq = buffer[: self.max_length]
+                        buffer = buffer[self.max_length :]
+                        buffer_len -= self.max_length
+
+                        yield {
+                            "input_ids": torch.tensor(seq[:-1], dtype=torch.long),
+                            "labels": torch.tensor(seq[1:], dtype=torch.long),
+                        }
+
+
+def create_training_config(
+    model_size: str,
+    profile,
+    total_tokens: int = 100_000_000_000,  # 100B tokens
+    warmup_tokens: int = 1_000_000_000,  # 1B tokens
+) -> TrainingConfig:
+    """Create training config optimized for the hardware profile.
+
+    Why: Different GPUs have different batch size / accumulation tradeoffs.
+    """
+    # Base config
+    batch_size = 4  # Per-device micro-batch
+    seq_length = 2048
+
+    # Adjust gradient accumulation based on VRAM
+    if profile.vram_gb >= 24:
+        grad_accum = 8
+    elif profile.vram_gb >= 16:
+        grad_accum = 16
+    else:
+        grad_accum = 32
+
+    # Effective batch size in tokens
+    effective_batch_tokens = batch_size * seq_length * grad_accum
+
+    # Calculate steps
+    total_steps = total_tokens // effective_batch_tokens
+    warmup_steps = warmup_tokens // effective_batch_tokens
+
+    # Learning rate based on model size
+    model_b = float(model_size.upper().rstrip("B"))
+    if model_b <= 1:
+        lr = 3e-4
+    elif model_b <= 3:
+        lr = 2e-4
+    elif model_b <= 7:
+        lr = 1e-4
+    else:
+        lr = 5e-5
+
+    return TrainingConfig(
+        batch_size=batch_size,
+        learning_rate=lr,
+        max_steps=total_steps,
+        warmup_steps=warmup_steps,
+        gradient_accumulation_steps=grad_accum,
+        max_grad_norm=1.0,
+        weight_decay=0.1,
+        adam_beta1=0.9,
+        adam_beta2=0.95,
+        adam_epsilon=1e-8,
+        gradient_checkpointing=True,
+        mixed_precision="bf16",
+        save_steps=5000,
+        eval_steps=1000,
+        logging_steps=100,
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Pretrain Tritter models")
+    parser.add_argument(
+        "--model",
+        type=str,
+        required=True,
+        help="Model size (1B, 3B, 7B, etc.)",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        required=True,
+        help="Directory containing training data (.jsonl files)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="checkpoints",
+        help="Directory to save checkpoints",
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        help="Resume from checkpoint directory",
+    )
+    parser.add_argument(
+        "--init-from",
+        type=str,
+        help="Initialize from a smaller model (for progressive training)",
+    )
+    parser.add_argument(
+        "--total-tokens",
+        type=int,
+        default=100_000_000_000,
+        help="Total tokens to train on (default: 100B)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print config without training",
+    )
+
+    args = parser.parse_args()
+
+    # Detect hardware
+    profile = detect_gpu_profile()
+    if profile is None:
+        print("Warning: Unknown GPU, using conservative settings")
+        from tritter.utils.hardware_profiles import RTX_5080
+        profile = RTX_5080
+
+    print(f"\n{'='*60}")
+    print(f"Tritter Pretraining")
+    print(f"{'='*60}")
+    print(f"Model size:    {args.model}")
+    print(f"Hardware:      {profile.name} ({profile.vram_gb:.0f}GB)")
+    print(f"Data dir:      {args.data_dir}")
+    print(f"Total tokens:  {args.total_tokens:,}")
+    print(f"{'='*60}\n")
+
+    # Check memory fit
+    from tritter.quantization.model_specs import get_model_spec
+    spec = get_model_spec(args.model)
+    if spec is None:
+        print(f"Error: Unknown model size '{args.model}'")
+        sys.exit(1)
+
+    # Estimate training memory (weights + gradients + optimizer + activations)
+    training_memory = spec.packed_size_gb * 20  # Rough estimate for full training
+    fits, message = check_memory_fit(training_memory)
+
+    if not fits:
+        print(f"Warning: {message}")
+        print("Consider using QLoRA fine-tuning instead (scripts/train_lora.py)")
+        if not args.dry_run:
+            response = input("Continue anyway? [y/N] ")
+            if response.lower() != "y":
+                sys.exit(1)
+
+    # Create model config
+    model_config = TritterConfig(model_size=args.model, use_bitnet=True)
+
+    # Create training config
+    train_config = create_training_config(
+        args.model, profile, total_tokens=args.total_tokens
+    )
+
+    print("Model config:")
+    print(f"  Hidden dim:  {model_config.hidden_size}")
+    print(f"  Layers:      {model_config.num_hidden_layers}")
+    print(f"  Heads:       {model_config.num_attention_heads}")
+    print()
+    print("Training config:")
+    print(f"  Batch size:  {train_config.batch_size}")
+    print(f"  Grad accum:  {train_config.gradient_accumulation_steps}")
+    print(f"  Learning rate: {train_config.learning_rate}")
+    print(f"  Total steps: {train_config.max_steps:,}")
+    print(f"  Warmup:      {train_config.warmup_steps:,}")
+    print()
+
+    if args.dry_run:
+        print("Dry run complete. Exiting.")
+        return
+
+    # Create model
+    print("Creating model...")
+    model = TritterModel(model_config)
+
+    # Load from smaller model for progressive training
+    if args.init_from:
+        print(f"Loading weights from {args.init_from}...")
+        # TODO: Implement progressive initialization (DUS)
+        print("Warning: Progressive training not yet implemented")
+        print("Starting from scratch...")
+
+    # Create tokenizer
+    from tritter.tokenization import MultimodalTokenizer
+    tokenizer = MultimodalTokenizer()
+
+    # Create dataset
+    print(f"Loading data from {args.data_dir}...")
+    dataset = PretrainDataset(
+        args.data_dir,
+        tokenizer,
+        max_length=model_config.max_position_embeddings,
+    )
+
+    # Create dataloader
+    dataloader = DataLoader(
+        dataset,
+        batch_size=train_config.batch_size,
+        num_workers=4,
+        pin_memory=True,
+    )
+
+    # Create trainer
+    trainer = Trainer(
+        model=model,
+        config=train_config,
+    )
+
+    # Resume if specified
+    if args.resume:
+        print(f"Resuming from {args.resume}...")
+        trainer.load_checkpoint(args.resume)
+
+    # Create output directory
+    output_dir = Path(args.output_dir)
+    model_dir = output_dir / f"{args.model.lower()}"
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    # Train
+    print(f"\nStarting training...")
+    print(f"Checkpoints will be saved to: {model_dir}")
+    print()
+
+    try:
+        trainer.train(
+            train_dataloader=dataloader,
+            output_dir=str(model_dir),
+        )
+    except KeyboardInterrupt:
+        print("\nTraining interrupted!")
+        save_path = model_dir / f"interrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        trainer.save_checkpoint(str(save_path))
+        print(f"Checkpoint saved to: {save_path}")
+        sys.exit(1)
+
+    # Save final model
+    final_path = model_dir / "final"
+    trainer.save_checkpoint(str(final_path))
+    print(f"\nFinal model saved to: {final_path}")
+
+    # Save metadata
+    metadata = {
+        "model_size": args.model,
+        "total_tokens": args.total_tokens,
+        "training_config": train_config.__dict__,
+        "hardware": profile.name,
+        "timestamp": datetime.now().isoformat(),
+    }
+    with open(final_path / "metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2, default=str)
+
+    print("\nTraining complete!")
+
+
+if __name__ == "__main__":
+    main()

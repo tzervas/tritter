@@ -144,11 +144,20 @@ print('No anti-patterns detected')
         stages: [pre-commit]
 
   # =============================================================================
-  # Stage 5: Documentation quality (optional, for docs changes)
+  # Stage 5: Documentation quality and sync validation
   # =============================================================================
 
   - repo: local
     hooks:
+      # Validate documentation is in sync with code
+      - id: doc-sync
+        name: Documentation sync validation
+        entry: python -m devtools.doc_sync_validator
+        language: system
+        pass_filenames: false
+        files: \.(py|md)$
+        stages: [pre-commit]
+
       # Check docstrings have "Why" section in modified files
       - id: check-docstring-why
         name: Check docstrings have Why section
