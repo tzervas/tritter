@@ -47,9 +47,12 @@ import hashlib
 import json
 import sys
 from collections.abc import Iterable, Iterator
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
+from enum import Enum
+from itertools import repeat
 from pathlib import Path
+from typing import TypeVar
 
 # Add src to path for development
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -63,7 +66,12 @@ except ImportError:
     TQDM_AVAILABLE = False
 
 
-def progress_bar[T](iterable: Iterable[T], total: int | None = None, desc: str = "") -> Iterator[T]:
+T = TypeVar("T")
+
+
+def progress_bar(  # noqa: UP047 - TypeVar preferred over PEP 695 for 3.11 compatibility docs
+    iterable: Iterable[T], total: int | None = None, desc: str = ""
+) -> Iterator[T]:
     """Wrap iterable with progress bar if tqdm is available.
 
     Why: Progress reporting is essential for long-running data processing tasks.
@@ -86,6 +94,25 @@ def progress_bar[T](iterable: Iterable[T], total: int | None = None, desc: str =
             if (i + 1) % 1000 == 0:
                 print(f"  Processed {i + 1:,} items...")
             yield item
+
+
+class SampleStatus(str, Enum):
+    """Status codes for processed samples.
+
+    Why: Explicit enum values prevent fragile string matching and make
+    status handling clear and type-safe.
+    """
+
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+    REJECTED_SECRETS = "rejected_secrets"
+    REJECTED_TOO_SHORT = "rejected_too_short"
+    REJECTED_TOO_LONG = "rejected_too_long"
+    REJECTED_QUALITY = "rejected_quality"
+    IMPORT_ERROR = "import_error"
+    READ_ERROR = "read_error"
+    UNSUPPORTED_LANGUAGE = "unsupported_language"
+    FILTERED_NEGATIVE = "filtered_negative"
 
 
 # Language detection based on file extension
@@ -131,6 +158,11 @@ class ProcessingStats:
         rejected_size: Files rejected due to size constraints
         positive_samples: High-quality samples
         negative_samples: Low-quality samples (for contrastive learning)
+        import_errors: Files that failed due to import errors
+        read_errors: Files that couldn't be read
+        unsupported_language: Files with unsupported language extensions
+        filtered_negative: Negative samples filtered when --positive-only
+        unknown_statuses: Files with unrecognized status codes
         by_language: Count by language
     """
 
@@ -141,6 +173,11 @@ class ProcessingStats:
     rejected_size: int = 0
     positive_samples: int = 0
     negative_samples: int = 0
+    import_errors: int = 0
+    read_errors: int = 0
+    unsupported_language: int = 0
+    filtered_negative: int = 0
+    unknown_statuses: int = 0
     by_language: dict[str, int] = field(default_factory=dict)
 
     def add_language(self, language: str) -> None:
@@ -216,6 +253,34 @@ def compute_file_hash(content: str) -> str:
     return hashlib.md5(content.encode()).hexdigest()
 
 
+def _walk_dir(dir_path: Path, skip_dirs: set[str], extensions: set[str]) -> Iterator[Path]:
+    """Recursively walk dir_path, pruning directories in skip_dirs.
+
+    Why: Using iterdir with recursive pruning is more efficient than rglob
+    because it avoids traversing into directories like node_modules entirely,
+    rather than traversing them and filtering afterwards.
+
+    Args:
+        dir_path: Directory to walk
+        skip_dirs: Set of directory names to skip
+        extensions: Set of file extensions to include
+
+    Yields:
+        File paths matching the extension filter
+    """
+    try:
+        entries = list(dir_path.iterdir())
+    except PermissionError:
+        return
+
+    for entry in entries:
+        if entry.is_dir():
+            if entry.name not in skip_dirs:
+                yield from _walk_dir(entry, skip_dirs, extensions)
+        elif entry.is_file() and entry.suffix.lower() in extensions:
+            yield entry
+
+
 def find_source_files(
     input_dir: Path,
     languages: set[str] | None = None,
@@ -258,17 +323,7 @@ def find_source_files(
         ".ruff_cache",
     }
 
-    files: list[Path] = []
-
-    for path in input_dir.rglob("*"):
-        # Skip directories we don't want
-        if any(skip in path.parts for skip in skip_dirs):
-            continue
-
-        # Only include files with recognized extensions
-        if path.is_file() and path.suffix.lower() in extensions:
-            files.append(path)
-
+    files = list(_walk_dir(input_dir, skip_dirs, extensions))
     return sorted(files)
 
 
@@ -277,11 +332,11 @@ def process_file(
     input_dir: Path,
     min_quality: float,
     include_negative: bool,
-) -> tuple[ProcessedSample | None, str]:
+) -> tuple[ProcessedSample | None, SampleStatus]:
     """Process a single file through the curation pipeline.
 
     Why: This function is designed to be called in parallel via ProcessPoolExecutor.
-    It returns both the result and a status string for logging.
+    It returns both the result and a SampleStatus enum for explicit status handling.
 
     Args:
         file_path: Path to source file
@@ -290,18 +345,18 @@ def process_file(
         include_negative: Whether to include negative samples
 
     Returns:
-        Tuple of (ProcessedSample or None, status string)
+        Tuple of (ProcessedSample or None, SampleStatus)
     """
     # Import here to avoid issues with multiprocessing
     try:
         from tritter.curation import CurationPipeline
     except ImportError:
-        return None, "import_error"
+        return None, SampleStatus.IMPORT_ERROR
 
     # Detect language
     language = detect_language(file_path)
     if language is None:
-        return None, "unsupported_language"
+        return None, SampleStatus.UNSUPPORTED_LANGUAGE
 
     # Read file
     try:
@@ -310,9 +365,9 @@ def process_file(
         try:
             content = file_path.read_text(encoding="latin-1")
         except Exception:
-            return None, "read_error"
+            return None, SampleStatus.READ_ERROR
     except Exception:
-        return None, "read_error"
+        return None, SampleStatus.READ_ERROR
 
     # Calculate relative source path
     try:
@@ -331,12 +386,20 @@ def process_file(
 
     # Handle rejected samples (secrets)
     if result.quality_label == "rejected":
-        return None, f"rejected_{result.rejected_reason or 'unknown'}"
+        reason = result.rejected_reason or "unknown"
+        if reason == "secrets":
+            return None, SampleStatus.REJECTED_SECRETS
+        elif reason == "too_short":
+            return None, SampleStatus.REJECTED_TOO_SHORT
+        elif reason == "too_long":
+            return None, SampleStatus.REJECTED_TOO_LONG
+        else:
+            return None, SampleStatus.REJECTED_QUALITY
 
     # Handle negative samples
     if result.quality_label == "negative":
         if not include_negative:
-            return None, "filtered_negative"
+            return None, SampleStatus.FILTERED_NEGATIVE
 
         return (
             ProcessedSample(
@@ -347,7 +410,7 @@ def process_file(
                 source=relative_path,
                 explanation=result.explanation,
             ),
-            "negative",
+            SampleStatus.NEGATIVE,
         )
 
     # Positive sample
@@ -359,7 +422,7 @@ def process_file(
             quality_label="positive",
             source=relative_path,
         ),
-        "positive",
+        SampleStatus.POSITIVE,
     )
 
 
@@ -533,61 +596,102 @@ Examples:
 
     include_negative = not args.positive_only
 
+    def update_stats(stats: ProcessingStats, status: SampleStatus) -> None:
+        """Update statistics based on sample status.
+
+        Why: Centralize status handling to avoid code duplication between
+        parallel and sequential processing paths.
+        """
+        match status:
+            case SampleStatus.POSITIVE:
+                stats.positive_samples += 1
+                stats.processed += 1
+            case SampleStatus.NEGATIVE:
+                stats.negative_samples += 1
+                stats.processed += 1
+            case SampleStatus.REJECTED_SECRETS:
+                stats.rejected_secrets += 1
+            case SampleStatus.REJECTED_TOO_SHORT | SampleStatus.REJECTED_TOO_LONG:
+                stats.rejected_size += 1
+            case SampleStatus.REJECTED_QUALITY:
+                stats.rejected_quality += 1
+            case SampleStatus.IMPORT_ERROR:
+                stats.import_errors += 1
+            case SampleStatus.READ_ERROR:
+                stats.read_errors += 1
+            case SampleStatus.UNSUPPORTED_LANGUAGE:
+                stats.unsupported_language += 1
+            case SampleStatus.FILTERED_NEGATIVE:
+                stats.filtered_negative += 1
+            case _:
+                stats.unknown_statuses += 1
+
+    def handle_sample(
+        sample: ProcessedSample | None,
+        status: SampleStatus,
+        stats: ProcessingStats,
+        seen_hashes: set[str],
+        current_shard: list[ProcessedSample],
+        shard_index: int,
+        shard_size: int,
+        output_dir: Path,
+    ) -> tuple[list[ProcessedSample], int]:
+        """Handle a processed sample result.
+
+        Why: Centralize sample handling to avoid code duplication between
+        parallel and sequential processing paths.
+
+        Returns:
+            Updated (current_shard, shard_index) tuple
+        """
+        update_stats(stats, status)
+
+        if sample is None:
+            return current_shard, shard_index
+
+        # Dedup check
+        content_hash = compute_file_hash(sample.text)
+        if content_hash in seen_hashes:
+            return current_shard, shard_index
+        seen_hashes.add(content_hash)
+
+        # Track language
+        stats.add_language(sample.language)
+
+        # Add to current shard
+        current_shard.append(sample)
+
+        # Write shard if full
+        if len(current_shard) >= shard_size:
+            shard_path = output_dir / f"shard_{shard_index:05d}.jsonl"
+            write_shard(current_shard, shard_path)
+            shard_index += 1
+            current_shard = []
+
+        return current_shard, shard_index
+
     if args.workers > 1:
-        # Parallel processing
+        # Parallel processing using executor.map for memory efficiency
         with ProcessPoolExecutor(max_workers=args.workers) as executor:
-            futures = {
-                executor.submit(
-                    process_file,
-                    f,
-                    args.input_dir,
-                    args.min_quality,
-                    include_negative,
-                ): f
-                for f in files
-            }
+            results_iter = executor.map(
+                process_file,
+                files,
+                repeat(args.input_dir),
+                repeat(args.min_quality),
+                repeat(include_negative),
+            )
 
-            for future in progress_bar(
-                as_completed(futures), total=len(futures), desc="Processing"
-            ):
-                sample, status = future.result()
-
-                # Update stats
-                if status == "positive":
-                    stats.positive_samples += 1
-                    stats.processed += 1
-                elif status == "negative":
-                    stats.negative_samples += 1
-                    stats.processed += 1
-                elif status.startswith("rejected_"):
-                    if "secrets" in status:
-                        stats.rejected_secrets += 1
-                    elif "short" in status or "long" in status:
-                        stats.rejected_size += 1
-                    else:
-                        stats.rejected_quality += 1
-
-                if sample is None:
-                    continue
-
-                # Dedup check
-                content_hash = compute_file_hash(sample.text)
-                if content_hash in seen_hashes:
-                    continue
-                seen_hashes.add(content_hash)
-
-                # Track language
-                stats.add_language(sample.language)
-
-                # Add to current shard
-                current_shard.append(sample)
-
-                # Write shard if full
-                if len(current_shard) >= args.shard_size:
-                    shard_path = args.output_dir / f"shard_{shard_index:05d}.jsonl"
-                    write_shard(current_shard, shard_path)
-                    shard_index += 1
-                    current_shard = []
+            for sample, status in progress_bar(results_iter, total=len(files), desc="Processing"):
+                current_shard, shard_index = handle_sample(
+                    sample,
+                    status,
+                    stats,
+                    seen_hashes,
+                    current_shard,
+                    shard_index,
+                    args.shard_size,
+                    args.output_dir,
+                )
     else:
         # Sequential processing
         for file_path in progress_bar(files, total=len(files), desc="Processing"):
@@ -598,42 +702,16 @@ Examples:
                 include_negative,
             )
 
-            # Update stats
-            if status == "positive":
-                stats.positive_samples += 1
-                stats.processed += 1
-            elif status == "negative":
-                stats.negative_samples += 1
-                stats.processed += 1
-            elif status.startswith("rejected_"):
-                if "secrets" in status:
-                    stats.rejected_secrets += 1
-                elif "short" in status or "long" in status:
-                    stats.rejected_size += 1
-                else:
-                    stats.rejected_quality += 1
-
-            if sample is None:
-                continue
-
-            # Dedup check
-            content_hash = compute_file_hash(sample.text)
-            if content_hash in seen_hashes:
-                continue
-            seen_hashes.add(content_hash)
-
-            # Track language
-            stats.add_language(sample.language)
-
-            # Add to current shard
-            current_shard.append(sample)
-
-            # Write shard if full
-            if len(current_shard) >= args.shard_size:
-                shard_path = args.output_dir / f"shard_{shard_index:05d}.jsonl"
-                write_shard(current_shard, shard_path)
-                shard_index += 1
-                current_shard = []
+            current_shard, shard_index = handle_sample(
+                sample,
+                status,
+                stats,
+                seen_hashes,
+                current_shard,
+                shard_index,
+                args.shard_size,
+                args.output_dir,
+            )
 
     # Write final shard if not empty
     if current_shard:
@@ -654,6 +732,13 @@ Examples:
     print(f"  Secrets (NEVER train):{stats.rejected_secrets:,}")
     print(f"  Quality issues:       {stats.rejected_quality:,}")
     print(f"  Size constraints:     {stats.rejected_size:,}")
+    print("Skipped files:")
+    print(f"  Import errors:        {stats.import_errors:,}")
+    print(f"  Read errors:          {stats.read_errors:,}")
+    print(f"  Unsupported language: {stats.unsupported_language:,}")
+    print(f"  Filtered negative:    {stats.filtered_negative:,}")
+    if stats.unknown_statuses > 0:
+        print(f"  Unknown statuses:     {stats.unknown_statuses:,}")
     print()
     print(f"Output shards:          {shard_index}")
     print(f"Output directory:       {args.output_dir}")
