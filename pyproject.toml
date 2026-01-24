@@ -58,8 +58,12 @@ training = [
     "nanotron>=0.3.0",
 ]
 
+curation = [
+    "datasketch>=1.6.0",  # For efficient MinHash deduplication
+]
+
 all = [
-    "tritter[dev,inference,training]",
+    "tritter[dev,inference,training,curation]",
 ]
 
 [project.scripts]
