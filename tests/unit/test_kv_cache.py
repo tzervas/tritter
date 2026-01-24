@@ -10,6 +10,7 @@ These tests verify quantization doesn't break attention patterns.
 import pytest
 import torch
 
+from conftest import requires_cuda
 from tritter.core.config import TritterConfig
 from tritter.inference.kv_cache import INT4KVCache, QuantizedTensor
 
@@ -357,7 +358,7 @@ class TestRepr:
         assert "memory=" in repr_str
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@requires_cuda
 class TestCUDA:
     """Tests requiring CUDA for realistic performance validation."""
 

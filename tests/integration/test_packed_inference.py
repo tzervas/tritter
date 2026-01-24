@@ -19,6 +19,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from conftest import requires_cuda
 from tritter.core.config import TritterConfig
 from tritter.quantization.bitnet import TernaryWeight
 from tritter.quantization.packed_ternary import (
@@ -244,7 +245,7 @@ class TestSaveLoadWorkflow:
         assert torch.allclose(reference_output, loaded_output, rtol=1e-5, atol=1e-5)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@requires_cuda
 class TestPackedLayerStreaming:
     """Test packed inference with layer streaming (GPU required)."""
 

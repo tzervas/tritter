@@ -28,6 +28,7 @@ unavailable and validate SDPA fallback path instead.
 import pytest
 import torch
 
+from conftest import requires_cuda
 from tritter.core.config import TritterConfig
 
 # Try importing FlexAttention components - may not exist yet or require PyTorch 2.5+
@@ -338,7 +339,7 @@ class TestPrefixLMMask:
     not (FLEX_ATTENTION_AVAILABLE and PYTORCH_FLEX_AVAILABLE and HAS_FLEX_ATTENTION),
     reason="FlexAttention not available (requires PyTorch 2.5+ and torch.compile support)",
 )
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@requires_cuda
 class TestFlexAttentionIntegration:
     """Integration tests for FlexAttention layer.
 
@@ -590,7 +591,7 @@ class TestSDPAFallback:
     not (FLEX_ATTENTION_AVAILABLE and PYTORCH_FLEX_AVAILABLE and HAS_FLEX_ATTENTION),
     reason="FlexAttention not available (requires PyTorch 2.5+ and torch.compile support)",
 )
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@requires_cuda
 class TestCreateAttentionMask:
     """Test suite for BlockMask factory function.
 

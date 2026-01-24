@@ -9,6 +9,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from conftest import requires_cuda
 from tritter.core.config import TritterConfig
 from tritter.inference.layer_streaming import (
     LayerGroupBuffer,
@@ -118,7 +119,7 @@ def mock_model() -> MockModel:
     return MockModel(num_layers=12, hidden_size=256)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required for layer streaming")
+@requires_cuda
 class TestLayerLoader:
     """Test suite for LayerLoader."""
 
@@ -325,7 +326,7 @@ class TestLayerLoader:
         assert loader._buffer_b is None
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required for layer streaming")
+@requires_cuda
 class TestLayerGroupBuffer:
     """Test suite for LayerGroupBuffer dataclass."""
 
@@ -363,7 +364,7 @@ def mock_tritter_model() -> MockTritterModel:
     return MockTritterModel(num_layers=12, hidden_size=256, vocab_size=1000)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required for streaming engine")
+@requires_cuda
 class TestStreamingInferenceEngine:
     """Test suite for StreamingInferenceEngine."""
 

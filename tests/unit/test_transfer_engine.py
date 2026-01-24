@@ -10,11 +10,12 @@ Tests cover:
 import pytest
 import torch
 
+from conftest import requires_cuda
 from tritter.core.config import TritterConfig
 from tritter.inference.transfer_engine import TransferEngine, pin_model_weights
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@requires_cuda
 class TestTransferEngine:
     """Test suite for TransferEngine CUDA streaming transfers."""
 
@@ -171,7 +172,7 @@ class TestTransferEngine:
         assert stream.device == engine.device
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@requires_cuda
 def test_pin_model_weights() -> None:
     """Test pinning all model weights for faster transfer.
 

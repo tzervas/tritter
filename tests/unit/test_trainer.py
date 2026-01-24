@@ -62,6 +62,18 @@ class SimpleModel(nn.Module):
 
 
 @pytest.fixture
+def cpu_device() -> torch.device:
+    """Force CPU device for testing.
+
+    Why: Tests are designed to run on CPU (use_amp=False). When CUDA is
+    available but the GPU architecture is incompatible (e.g., RTX 5080/sm_120),
+    torch.cuda.is_available() returns True but operations fail. Explicitly
+    using CPU avoids this issue.
+    """
+    return torch.device("cpu")
+
+
+@pytest.fixture
 def training_config() -> TrainingConfig:
     """Create training config for tests.
 
@@ -251,6 +263,7 @@ class TestTrainer:
         model_config: TritterConfig,
         training_config: TrainingConfig,
         train_dataloader: DataLoader,
+        cpu_device: torch.device,
     ) -> None:
         """Test that trainer initializes correctly.
 
@@ -259,6 +272,7 @@ class TestTrainer:
             model_config: Model configuration
             training_config: Training configuration
             train_dataloader: Training data
+            cpu_device: CPU device for testing
 
         Why: Verify trainer sets up all components without errors.
         """
@@ -267,6 +281,7 @@ class TestTrainer:
             model_config,
             training_config,
             train_dataloader,
+            device=cpu_device,
         )
 
         assert trainer.model == simple_model
@@ -282,6 +297,7 @@ class TestTrainer:
         model_config: TritterConfig,
         training_config: TrainingConfig,
         train_dataloader: DataLoader,
+        cpu_device: torch.device,
     ) -> None:
         """Test that optimizer separates decay and no-decay parameters.
 
@@ -290,6 +306,7 @@ class TestTrainer:
             model_config: Model configuration
             training_config: Training configuration
             train_dataloader: Training data
+            cpu_device: CPU device for testing
 
         Why: Weight decay should only apply to weights, not biases or norms.
         This follows best practices from BERT/GPT and prevents over-regularization.
@@ -299,6 +316,7 @@ class TestTrainer:
             model_config,
             training_config,
             train_dataloader,
+            device=cpu_device,
         )
 
         # Optimizer should have two parameter groups
@@ -323,6 +341,7 @@ class TestTrainer:
         model_config: TritterConfig,
         training_config: TrainingConfig,
         train_dataloader: DataLoader,
+        cpu_device: torch.device,
     ) -> None:
         """Test that learning rate scheduler implements warmup correctly.
 
@@ -331,6 +350,7 @@ class TestTrainer:
             model_config: Model configuration
             training_config: Training configuration
             train_dataloader: Training data
+            cpu_device: CPU device for testing
 
         Why: Warmup should linearly increase LR from 0 to target over
         warmup_steps. This prevents early training instability.
@@ -340,6 +360,7 @@ class TestTrainer:
             model_config,
             training_config,
             train_dataloader,
+            device=cpu_device,
         )
 
         # Initial LR should be near 0 (step 0 of warmup)
@@ -366,6 +387,7 @@ class TestTrainer:
         model_config: TritterConfig,
         training_config: TrainingConfig,
         train_dataloader: DataLoader,
+        cpu_device: torch.device,
     ) -> None:
         """Test that train_step returns a valid loss value.
 
@@ -374,6 +396,7 @@ class TestTrainer:
             model_config: Model configuration
             training_config: Training configuration
             train_dataloader: Training data
+            cpu_device: CPU device for testing
 
         Why: Training step should compute forward pass, loss, and
         backward pass, returning the loss value.
@@ -383,6 +406,7 @@ class TestTrainer:
             model_config,
             training_config,
             train_dataloader,
+            device=cpu_device,
         )
 
         # Get a batch
@@ -403,6 +427,7 @@ class TestTrainer:
         model_config: TritterConfig,
         training_config: TrainingConfig,
         train_dataloader: DataLoader,
+        cpu_device: torch.device,
     ) -> None:
         """Test that train_step computes gradients.
 
@@ -411,6 +436,7 @@ class TestTrainer:
             model_config: Model configuration
             training_config: Training configuration
             train_dataloader: Training data
+            cpu_device: CPU device for testing
 
         Why: Backward pass should populate .grad for all parameters.
         """
@@ -419,6 +445,7 @@ class TestTrainer:
             model_config,
             training_config,
             train_dataloader,
+            device=cpu_device,
         )
 
         # Get a batch
@@ -445,6 +472,7 @@ class TestTrainer:
         model_config: TritterConfig,
         training_config: TrainingConfig,
         train_dataloader: DataLoader,
+        cpu_device: torch.device,
     ) -> None:
         """Test that checkpoint save/load preserves training state.
 
@@ -453,6 +481,7 @@ class TestTrainer:
             model_config: Model configuration
             training_config: Training configuration
             train_dataloader: Training data
+            cpu_device: CPU device for testing
 
         Why: Checkpointing enables fault tolerance. Save/load should
         restore exact training state including step count and optimizer state.
@@ -464,6 +493,7 @@ class TestTrainer:
                 model_config,
                 training_config,
                 train_dataloader,
+                device=cpu_device,
             )
 
             # Run a few training steps
@@ -491,6 +521,7 @@ class TestTrainer:
                 model_config,
                 training_config,
                 train_dataloader,
+                device=cpu_device,
             )
 
             # Load checkpoint
@@ -517,6 +548,7 @@ class TestTrainer:
         training_config: TrainingConfig,
         train_dataloader: DataLoader,
         eval_dataloader: DataLoader,
+        cpu_device: torch.device,
     ) -> None:
         """Test that evaluation computes metrics correctly.
 
@@ -526,6 +558,7 @@ class TestTrainer:
             training_config: Training configuration
             train_dataloader: Training data
             eval_dataloader: Evaluation data
+            cpu_device: CPU device for testing
 
         Why: Evaluation should compute loss and perplexity without
         updating model parameters.
@@ -536,6 +569,7 @@ class TestTrainer:
             training_config,
             train_dataloader,
             eval_dataloader,
+            device=cpu_device,
         )
 
         # Save initial model state
@@ -573,6 +607,7 @@ class TestTrainer:
         model_config: TritterConfig,
         training_config: TrainingConfig,
         train_dataloader: DataLoader,
+        cpu_device: torch.device,
     ) -> None:
         """Test that gradients accumulate correctly over multiple steps.
 
@@ -581,6 +616,7 @@ class TestTrainer:
             model_config: Model configuration
             training_config: Training configuration
             train_dataloader: Training data
+            cpu_device: CPU device for testing
 
         Why: Gradient accumulation simulates larger batch sizes without
         increasing memory usage. Gradients should accumulate over N steps
@@ -591,6 +627,7 @@ class TestTrainer:
             model_config,
             training_config,
             train_dataloader,
+            device=cpu_device,
         )
 
         # Get initial parameter value

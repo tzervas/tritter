@@ -20,6 +20,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from conftest import requires_cuda
 from tritter.core.config import TritterConfig
 from tritter.models.architecture import TritterModel
 from tritter.training.lora import (
@@ -522,7 +523,7 @@ class TestMemoryEstimation:
         assert estimates["total_params"] == actual_lora_params
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@requires_cuda
 class TestLoRACUDA:
     """Test LoRA on CUDA."""
 
