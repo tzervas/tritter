@@ -158,6 +158,7 @@ MODEL_SPECS: dict[ModelSize, ModelSpec] = {
         num_heads=12,
         num_kv_heads=None,  # MHA
         intermediate_size=3072,
+        max_position_embeddings=2048,  # Reasonable context for training
         description="GPT-2 small equivalent, fits in 8GB for training",
     ),
     "350M": ModelSpec(
@@ -167,6 +168,7 @@ MODEL_SPECS: dict[ModelSize, ModelSpec] = {
         num_heads=16,
         num_kv_heads=None,  # MHA
         intermediate_size=4096,
+        max_position_embeddings=2048,  # Reasonable context for training
         description="GPT-2 medium equivalent, fits in 16GB for training",
     ),
     # ---------------------------------------------------------------------

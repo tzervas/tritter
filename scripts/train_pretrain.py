@@ -227,6 +227,11 @@ def main():
         help="Total tokens to train on (default: 100B)",
     )
     parser.add_argument(
+        "--no-bitnet",
+        action="store_true",
+        help="Disable BitNet quantization (use standard FP16/32 training)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print config without training",
@@ -273,7 +278,9 @@ def main():
                 sys.exit(1)
 
     # Create model config
-    model_config = TritterConfig(model_size=args.model, use_bitnet=True)
+    use_bitnet = not args.no_bitnet
+    model_config = TritterConfig(model_size=args.model, use_bitnet=use_bitnet)
+    print(f"BitNet:        {'Enabled' if use_bitnet else 'Disabled'}")
 
     # Create training config
     train_config = create_training_config(

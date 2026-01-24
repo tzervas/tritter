@@ -39,9 +39,12 @@ class TernaryWeight(nn.Module):
         self.out_features = out_features
 
         # Full-precision weights for training
-        self.weight = nn.Parameter(torch.randn(out_features, in_features))
+        # Use Kaiming initialization for stability (same as nn.Linear)
+        self.weight = nn.Parameter(torch.empty(out_features, in_features))
+        nn.init.kaiming_uniform_(self.weight, a=5**0.5)
 
         # Scaling factors for quantization (per output channel)
+        # Initialize to match expected weight magnitude after quantization
         self.scale = nn.Parameter(torch.ones(out_features, 1))
 
         if bias:
