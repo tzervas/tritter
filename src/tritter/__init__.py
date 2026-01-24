@@ -11,9 +11,13 @@ __license__ = "MIT"
 
 from tritter.core.config import TritterConfig
 from tritter.models.architecture import TritterModel
+from tritter.vision.siglip import SigLIPConfig, SigLIPVisionEncoder, create_siglip_encoder
 
 __all__ = [
     "TritterConfig",
     "TritterModel",
+    "SigLIPConfig",
+    "SigLIPVisionEncoder",
+    "create_siglip_encoder",
     "__version__",
 ]
