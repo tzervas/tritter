@@ -21,9 +21,9 @@ from tritter.utils.device_utils import (
     optimize_for_rtx5080,
 )
 from tritter.utils.hardware_profiles import (
-    HardwareProfile,
     RTX_3090_TI,
     RTX_5080,
+    HardwareProfile,
     create_config_for_profile,
     detect_gpu_profile,
     get_adjusted_budget,

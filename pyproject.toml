@@ -108,7 +108,8 @@ testpaths = [
     "tests",
 ]
 pythonpath = [
-    "src"
+    "src",
+    "."
 ]
 markers = [
     "gpu: marks tests as requiring GPU hardware (deselect with '-m \"not gpu\"')",

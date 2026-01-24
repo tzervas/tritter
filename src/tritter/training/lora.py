@@ -28,12 +28,11 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Iterator
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from tritter.quantization.bitnet import TernaryWeight
 from tritter.quantization.packed_ternary import PackedTernaryWeight
@@ -171,8 +170,27 @@ class LoRALinear(nn.Module):
         #   - Allows different initialization strategies
         #   - B=0 init means LoRA starts as identity
         #   - Standard practice from original paper
-        self.lora_A = nn.Parameter(torch.zeros(self.in_features, config.rank))
-        self.lora_B = nn.Parameter(torch.zeros(config.rank, self.out_features))
+        # Why use same device/dtype as base layer:
+        #   - apply_lora may be called after model.to(device)
+        #   - Ensures LoRA params are on same device as base for forward pass
+        # Note: PackedTernaryWeight uses buffers (uint8) not parameters,
+        #       so we get device from buffers but use float32 for LoRA params
+        try:
+            base_tensor = next(base_layer.parameters())
+            base_device = base_tensor.device
+            base_dtype = base_tensor.dtype
+        except StopIteration:
+            # PackedTernaryWeight stores packed data as uint8 buffers
+            # Use device from buffers but default to float32 for trainable LoRA params
+            base_tensor = next(base_layer.buffers())
+            base_device = base_tensor.device
+            base_dtype = torch.float32  # LoRA needs float dtype for gradients
+        self.lora_A = nn.Parameter(
+            torch.zeros(self.in_features, config.rank, device=base_device, dtype=base_dtype)
+        )
+        self.lora_B = nn.Parameter(
+            torch.zeros(config.rank, self.out_features, device=base_device, dtype=base_dtype)
+        )
 
         # Dropout for regularization
         self.dropout = nn.Dropout(p=config.dropout) if config.dropout > 0 else nn.Identity()
@@ -427,7 +445,7 @@ def apply_lora(
                 param.requires_grad = False
     elif config.bias == "lora_only":
         # Only unfreeze biases in LoRA layers
-        for name, module in model.named_modules():
+        for _name, module in model.named_modules():
             if isinstance(module, LoRALinear):
                 if hasattr(module.base_layer, "bias") and module.base_layer.bias is not None:
                     module.base_layer.bias.requires_grad = True
@@ -633,7 +651,7 @@ def load_lora_adapters(model: nn.Module, path: str, strict: bool = True) -> nn.M
 
 
 def estimate_lora_memory(
-    model_config: "TritterConfig",  # noqa: F821 - forward reference
+    model_config: TritterConfig,  # noqa: F821 - forward reference
     lora_config: LoRAConfig,
     dtype: torch.dtype = torch.float16,
 ) -> dict[str, float]:
@@ -668,12 +686,6 @@ def estimate_lora_memory(
         1 for t in lora_config.target_modules
         if t in ("q_proj", "k_proj", "v_proj", "o_proj")
     )
-    # MLP: gate, up, down projections
-    num_mlp_targets = sum(
-        1 for t in lora_config.target_modules
-        if t in ("gate_proj", "up_proj", "down_proj")
-    )
-
     # Per-layer LoRA params
     h = model_config.hidden_size
     ffn = model_config.intermediate_size

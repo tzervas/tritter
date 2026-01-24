@@ -310,24 +310,24 @@ def suggest_memory_reduction(
         )
     elif gap > 5:
         suggestions.append(
-            f"Enable layer streaming: config.use_layer_streaming=True"
+            "Enable layer streaming: config.use_layer_streaming=True"
         )
         suggestions.append(
-            f"Use LoRA for training instead of full fine-tuning"
+            "Use LoRA for training instead of full fine-tuning"
         )
     elif gap > 1:
         suggestions.append(
             f"Reduce context length (current gap: {gap:.1f}GB)"
         )
         suggestions.append(
-            f"Use INT4 KV-cache: reduces cache by 4x"
+            "Use INT4 KV-cache: reduces cache by 4x"
         )
     else:
         suggestions.append(
-            f"Close GPU-intensive desktop applications"
+            "Close GPU-intensive desktop applications"
         )
         suggestions.append(
-            f"Reduce batch size to 1"
+            "Reduce batch size to 1"
         )
 
     # Always suggest these

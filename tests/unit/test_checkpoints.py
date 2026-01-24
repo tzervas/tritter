@@ -7,7 +7,6 @@ save/load works correctly across all formats.
 
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 
@@ -411,7 +410,6 @@ class TestModelExpansion:
         from tritter.checkpoints.progressive import (
             ProgressiveMetadata,
             _depth_upscale,
-            save_progressive,
         )
 
         # Save original model
@@ -460,8 +458,8 @@ class TestCheckpointValidation:
     )
     def test_validate_safetensors(self, simple_model, temp_dir):
         """Verify validation works for safetensors."""
-        from tritter.checkpoints.formats import CheckpointFormat, save_checkpoint
         from devtools.debug_tools import validate_checkpoint
+        from tritter.checkpoints.formats import CheckpointFormat, save_checkpoint
 
         path = temp_dir / "model.safetensors"
         save_checkpoint(simple_model, path, format=CheckpointFormat.SAFETENSORS)
@@ -474,8 +472,8 @@ class TestCheckpointValidation:
 
     def test_validate_pytorch(self, simple_model, temp_dir):
         """Verify validation works for PyTorch checkpoints."""
-        from tritter.checkpoints.formats import CheckpointFormat, save_checkpoint
         from devtools.debug_tools import validate_checkpoint
+        from tritter.checkpoints.formats import CheckpointFormat, save_checkpoint
 
         path = temp_dir / "model.pt"
         save_checkpoint(simple_model, path, format=CheckpointFormat.PYTORCH)
@@ -491,8 +489,8 @@ class TestCheckpointValidation:
     )
     def test_validate_progressive_directory(self, simple_model, temp_dir):
         """Verify validation works for progressive checkpoint directories."""
-        from tritter.checkpoints.progressive import ProgressiveMetadata, save_progressive
         from devtools.debug_tools import validate_checkpoint
+        from tritter.checkpoints.progressive import ProgressiveMetadata, save_progressive
 
         meta = ProgressiveMetadata(model_size="test", hidden_size=64, num_layers=2)
         path = temp_dir / "checkpoint"

@@ -115,7 +115,7 @@ class ProgressiveMetadata:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ProgressiveMetadata":
+    def from_dict(cls, data: dict[str, Any]) -> ProgressiveMetadata:
         """Create from dictionary."""
         current = data.get("current_size", {})
         progress = data.get("training_progress", {})

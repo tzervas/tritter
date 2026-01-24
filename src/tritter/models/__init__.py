@@ -2,8 +2,8 @@
 
 from tritter.models.architecture import TritterModel
 from tritter.models.flex_attention import (
-    FlexAttentionLayer,
     HAS_FLEX_ATTENTION,
+    FlexAttentionLayer,
     create_attention_mask,
 )
 
