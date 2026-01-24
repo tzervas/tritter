@@ -73,11 +73,13 @@ class TernaryWeight(nn.Module):
         alpha = weights.abs().mean(dim=1, keepdim=True)
 
         # Quantize to {-1, 0, 1} using per-channel thresholds
-        quantized = torch.where(
-            weights > alpha,
-            torch.ones_like(weights),
-            torch.where(weights < -alpha, -torch.ones_like(weights), torch.zeros_like(weights)),
-        )
+        # Memory-efficient implementation using in-place operations
+        # Creates only one temporary tensor (quantized) and fills it in-place
+        # This minimizes peak memory usage for large layers like lm_head
+        quantized = torch.zeros_like(weights)
+        quantized.masked_fill_(weights > alpha, 1)
+        quantized.masked_fill_(weights < -alpha, -1)
+
         return quantized
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
