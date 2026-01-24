@@ -126,6 +126,7 @@ y = x @ x.T  # Matrix multiply: OK
 
 # Neural network layers
 linear = torch.nn.Linear(256, 256).cuda()
+inp = torch.randn(1, 256, device='cuda')
 out = linear(inp)  # Linear layer: OK
 
 # Attention mechanisms

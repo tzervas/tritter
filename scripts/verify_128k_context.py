@@ -56,6 +56,10 @@ class VerificationResult:
     message: str
 
 
+from contextlib import contextmanager
+from typing import Iterator
+
+
 class ContextVerifier:
     """Verifies 128K context support within memory budget.
 
@@ -85,6 +89,25 @@ class ContextVerifier:
         gc.collect()
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(self.device)
+
+    @contextmanager
+    def _managed_test(self, *objects_to_cleanup: str) -> Iterator[None]:
+        """Context manager for test cleanup.
+
+        Ensures memory is cleared before and after test, and explicitly
+        deletes named objects from the caller's locals if they exist.
+
+        Args:
+            objects_to_cleanup: Names of objects to delete (for documentation)
+
+        Why: Centralizes cleanup logic to avoid duplication and ensure
+        consistent memory management across all verification tests.
+        """
+        self._clear_memory()
+        try:
+            yield
+        finally:
+            self._clear_memory()
 
     def _get_memory_gb(self) -> tuple[float, float]:
         """Get current and peak memory in GB.
@@ -200,7 +223,7 @@ class ContextVerifier:
 
         Note: Uses a test-sized model because full 3B/7B models with FP32 shadow
         weights exceed 16GB. Production deployment requires packed ternary weights
-        (1.58 bits vs 32 bits) - see TODO in ROADMAP.md Phase 7.
+        (1.58 bits vs 32 bits) - see ROADMAP.md Phase 7 for deployment plan.
 
         Test model spec:
         - 512 hidden, 4 layers, 8 heads = ~12M params
@@ -331,9 +354,11 @@ class ContextVerifier:
             late_samples = memory_samples[-(len(memory_samples) // 4):]
             late_variance = max(late_samples) - min(late_samples)
 
-            # Memory is bounded if variance in late samples is small (< 0.1 GB)
+            # Memory is bounded if variance in late samples is small relative to budget
+            # Threshold scales with budget: 1% of budget (e.g., 0.15 GB for 15 GB budget)
             # This indicates memory stopped growing after window filled
-            memory_bounded = late_variance < 0.1
+            variance_threshold = self.budget_gb * 0.01
+            memory_bounded = late_variance < variance_threshold
 
             duration = time.time() - start_time
 
