@@ -33,8 +33,12 @@ dependencies = [
     "numpy>=1.24.0",
     "transformers>=4.35.0",
     "tokenizers>=0.15.0",
+    "tiktoken>=0.5.0",
     "einops>=0.7.0",
     "triton>=3.0.0",
+    "tree-sitter>=0.20.0",
+    "tree-sitter-python>=0.20.0",
+    "tree-sitter-rust>=0.20.0",
 ]
 
 [project.optional-dependencies]
