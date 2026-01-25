@@ -44,8 +44,11 @@ class TernaryWeight(nn.Module):
         nn.init.kaiming_uniform_(self.weight, a=5**0.5)
 
         # Scaling factors for quantization (per output channel)
-        # Initialize to match expected weight magnitude after quantization
-        self.scale = nn.Parameter(torch.ones(out_features, 1))
+        # Initialize to ~1/sqrt(in_features) to normalize output variance
+        # After quantization to {-1,0,+1}, each output has variance ~in_features/4
+        # Scale by 1/sqrt(in_features/4) = 2/sqrt(in_features) to get unit variance
+        init_scale = 2.0 / (in_features ** 0.5)
+        self.scale = nn.Parameter(torch.full((out_features, 1), init_scale))
 
         if bias:
             self.bias = nn.Parameter(torch.zeros(out_features))

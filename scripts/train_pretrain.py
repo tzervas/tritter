@@ -287,6 +287,16 @@ def main():
         args.model, profile, total_tokens=args.total_tokens
     )
 
+    # BitNet-specific training adjustments
+    # Why: BitNet's STE (straight-through estimator) requires:
+    # 1. Disable AMP - FP16 scaling interferes with ternary quantization gradients
+    # 2. Slightly lower learning rate for stability
+    # 3. Gradient clipping already in config (max_grad_norm=1.0)
+    if use_bitnet:
+        train_config.use_amp = False
+        train_config.learning_rate = train_config.learning_rate * 0.5  # 2x lower for QAT
+        print("BitNet QAT mode: AMP disabled, LR adjusted for stability")
+
     print("Model config:")
     print(f"  Hidden dim:  {model_config.hidden_size}")
     print(f"  Layers:      {model_config.num_layers}")
