@@ -1,6 +1,6 @@
 [project]
 name = "tritter"
-version = "0.1.0"
+version = "0.2.0"
 description = "Multimodal AI model with BitNet 1.58-bit quantization, 128K context, any-to-any (text/code/image/audio) fusion"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -57,6 +57,7 @@ inference = [
 
 training = [
     "nanotron>=0.3.0",
+    "vsa-training-optimizer>=0.1.0",  # VSA/ternary gradient optimization
 ]
 
 curation = [
