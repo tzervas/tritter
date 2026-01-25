@@ -373,6 +373,24 @@ class TritterModel(nn.Module):
         else:
             self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
+    def gradient_checkpointing_enable(self) -> None:
+        """Enable gradient checkpointing to reduce memory usage during training.
+
+        Why: Gradient checkpointing trades compute for memory by recomputing
+        activations during backward pass instead of storing them. Reduces memory
+        by ~60% for large models, enabling training on limited VRAM.
+        """
+        self._gradient_checkpointing = True
+
+    def gradient_checkpointing_disable(self) -> None:
+        """Disable gradient checkpointing."""
+        self._gradient_checkpointing = False
+
+    @property
+    def is_gradient_checkpointing(self) -> bool:
+        """Check if gradient checkpointing is enabled."""
+        return getattr(self, "_gradient_checkpointing", False)
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -412,8 +430,17 @@ class TritterModel(nn.Module):
         # Core computation: embeddings → embeddings
         # Why: No tokenization between layers. Each layer transforms continuous
         # representations, preserving semantic information without discretization loss.
-        for layer in self.layers:
-            hidden_states = layer(hidden_states, attention_mask)  # Still (B, L, D)
+        if self.is_gradient_checkpointing and self.training:
+            # Use gradient checkpointing to reduce memory
+            from torch.utils.checkpoint import checkpoint
+
+            for layer in self.layers:
+                hidden_states = checkpoint(
+                    layer, hidden_states, attention_mask, use_reentrant=False
+                )
+        else:
+            for layer in self.layers:
+                hidden_states = layer(hidden_states, attention_mask)  # Still (B, L, D)
 
         # Final layer norm
         hidden_states = self.norm(hidden_states)  # (B, L, D)

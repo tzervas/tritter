@@ -31,6 +31,7 @@ Output:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +43,7 @@ from torch.utils.data import DataLoader, IterableDataset
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from tritter import TritterConfig, TritterModel
+from tritter.tokenization import ModalityType
 from tritter.training import Trainer, TrainingConfig
 from tritter.utils import check_memory_fit, detect_gpu_profile
 
@@ -100,7 +102,11 @@ class PretrainDataset(IterableDataset):
                     if not text:
                         continue
 
-                    tokens = self.tokenizer.encode(text)
+                    # Determine modality from language field
+                    language = item.get("language", "python")
+                    modality = ModalityType.CODE if language in ("python", "rust", "javascript", "typescript", "go", "java", "c", "cpp") else ModalityType.TEXT
+
+                    tokens = self.tokenizer.encode(text, modality=modality, language=language)
 
                     # Add to buffer
                     buffer.extend(tokens)
@@ -128,28 +134,39 @@ def create_training_config(
 
     Why: Different GPUs have different batch size / accumulation tradeoffs.
     """
-    # Base config
-    batch_size = 4  # Per-device micro-batch
-    seq_length = 2048
+    # Base config - reduced for memory efficiency
+    # 1B model with full precision requires ~12GB+ for weights+gradients+optimizer
+    batch_size = 1  # Reduced for memory
+    seq_length = 512  # Reduced from 2048 for memory
 
-    # Adjust gradient accumulation based on VRAM
+    # Increase gradient accumulation to compensate for smaller batch
     if profile.vram_gb >= 24:
-        grad_accum = 8
-    elif profile.vram_gb >= 16:
-        grad_accum = 16
-    else:
         grad_accum = 32
+    elif profile.vram_gb >= 16:
+        grad_accum = 64  # More accumulation to reach effective batch
+    else:
+        grad_accum = 128
 
     # Effective batch size in tokens
     effective_batch_tokens = batch_size * seq_length * grad_accum
 
     # Calculate steps
-    total_steps = total_tokens // effective_batch_tokens
-    warmup_steps = warmup_tokens // effective_batch_tokens
+    total_steps = max(1, total_tokens // effective_batch_tokens)
+    warmup_steps = min(warmup_tokens // effective_batch_tokens, total_steps // 10)  # Cap warmup at 10% of total
 
     # Learning rate based on model size
-    model_b = float(model_size.upper().rstrip("B"))
-    if model_b <= 1:
+    # Handle various size formats: "1B", "125M", "test"
+    size_upper = model_size.upper()
+    if size_upper == "TEST":
+        model_b = 0.01  # ~10M params
+    elif size_upper.endswith("M"):
+        model_b = float(size_upper.rstrip("M")) / 1000  # Convert M to B
+    else:
+        model_b = float(size_upper.rstrip("B"))
+
+    if model_b <= 0.5:
+        lr = 5e-4  # Higher LR for tiny models
+    elif model_b <= 1:
         lr = 3e-4
     elif model_b <= 3:
         lr = 2e-4
@@ -166,14 +183,10 @@ def create_training_config(
         gradient_accumulation_steps=grad_accum,
         max_grad_norm=1.0,
         weight_decay=0.1,
-        adam_beta1=0.9,
-        adam_beta2=0.95,
-        adam_epsilon=1e-8,
-        gradient_checkpointing=True,
-        mixed_precision="bf16",
         save_steps=5000,
         eval_steps=1000,
-        logging_steps=100,
+        log_steps=100,
+        use_amp=True,
     )
 
 
@@ -214,6 +227,11 @@ def main():
         help="Total tokens to train on (default: 100B)",
     )
     parser.add_argument(
+        "--no-bitnet",
+        action="store_true",
+        help="Disable BitNet quantization (use standard FP16/32 training)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print config without training",
@@ -245,7 +263,10 @@ def main():
         sys.exit(1)
 
     # Estimate training memory (weights + gradients + optimizer + activations)
-    training_memory = spec.packed_size_gb * 20  # Rough estimate for full training
+    # BitNet 1.58-bit = 2 bits per weight, but training uses full precision
+    params = spec.total_params()
+    packed_size_gb = (params * 2) / 8 / (1024**3)  # 2-bit packed weights
+    training_memory = packed_size_gb * 20  # Rough estimate for full training
     fits, message = check_memory_fit(training_memory)
 
     if not fits:
@@ -257,17 +278,29 @@ def main():
                 sys.exit(1)
 
     # Create model config
-    model_config = TritterConfig(model_size=args.model, use_bitnet=True)
+    use_bitnet = not args.no_bitnet
+    model_config = TritterConfig(model_size=args.model, use_bitnet=use_bitnet)
+    print(f"BitNet:        {'Enabled' if use_bitnet else 'Disabled'}")
 
     # Create training config
     train_config = create_training_config(
         args.model, profile, total_tokens=args.total_tokens
     )
 
+    # BitNet-specific training adjustments
+    # Why: BitNet's STE (straight-through estimator) requires:
+    # 1. Disable AMP - FP16 scaling interferes with ternary quantization gradients
+    # 2. Slightly lower learning rate for stability
+    # 3. Gradient clipping already in config (max_grad_norm=1.0)
+    if use_bitnet:
+        train_config.use_amp = False
+        train_config.learning_rate = train_config.learning_rate * 0.5  # 2x lower for QAT
+        print("BitNet QAT mode: AMP disabled, LR adjusted for stability")
+
     print("Model config:")
     print(f"  Hidden dim:  {model_config.hidden_size}")
-    print(f"  Layers:      {model_config.num_hidden_layers}")
-    print(f"  Heads:       {model_config.num_attention_heads}")
+    print(f"  Layers:      {model_config.num_layers}")
+    print(f"  Heads:       {model_config.num_heads}")
     print()
     print("Training config:")
     print(f"  Batch size:  {train_config.batch_size}")
@@ -285,6 +318,11 @@ def main():
     print("Creating model...")
     model = TritterModel(model_config)
 
+    # Enable gradient checkpointing for memory efficiency
+    # Why: Reduces memory by ~60% by recomputing activations during backward
+    print("Enabling gradient checkpointing for memory efficiency...")
+    model.gradient_checkpointing_enable()
+
     # Load from smaller model for progressive training
     if args.init_from:
         print(f"Loading weights from {args.init_from}...")
@@ -293,8 +331,8 @@ def main():
         print("Starting from scratch...")
 
     # Create tokenizer
-    from tritter.tokenization import MultimodalTokenizer
-    tokenizer = MultimodalTokenizer()
+    from tritter.tokenization import MultiModalTokenizer
+    tokenizer = MultiModalTokenizer()
 
     # Create dataset
     print(f"Loading data from {args.data_dir}...")

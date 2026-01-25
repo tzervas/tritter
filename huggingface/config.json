@@ -1,0 +1,29 @@
+{
+  "_name_or_path": "tritter-ai/tritter-{size}",
+  "architectures": [
+    "TritterModel"
+  ],
+  "model_type": "tritter",
+  "auto_map": {
+    "AutoConfig": "tritter.core.config.TritterConfig",
+    "AutoModelForCausalLM": "tritter.models.architecture.TritterModel"
+  },
+  "hidden_size": 4096,
+  "num_hidden_layers": 32,
+  "num_attention_heads": 32,
+  "num_key_value_heads": 8,
+  "intermediate_size": 11008,
+  "vocab_size": 65536,
+  "max_position_embeddings": 131072,
+  "rope_theta": 500000.0,
+  "use_bitnet": true,
+  "bitnet_precision": 1.58,
+  "use_flash_attention": true,
+  "use_qk_norm": true,
+  "activation_function": "squared_relu",
+  "layer_norm_eps": 1e-5,
+  "initializer_range": 0.02,
+  "tie_word_embeddings": false,
+  "torch_dtype": "bfloat16",
+  "transformers_version": "4.40.0"
+}

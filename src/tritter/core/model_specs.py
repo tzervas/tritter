@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 # Supported model sizes
-ModelSize = Literal["1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"]
+ModelSize = Literal["test", "125M", "350M", "1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"]
 
 
 @dataclass(frozen=True)
@@ -119,12 +119,58 @@ class ModelSpec:
         """Total parameters in billions."""
         return self.total_params() / 1e9
 
+    @property
+    def packed_size_gb(self) -> float:
+        """Packed ternary weight size in GB.
+
+        Why: Useful for memory planning and model card generation.
+        Packed ternary uses 2 bits per weight plus scale factors.
+        """
+        total_params = self.total_params()
+        # 2 bits per param + scales (~4 bytes per 4096 params)
+        packed_bytes = total_params * 0.25 + (total_params / 4096) * 4
+        return packed_bytes / (1024**3)
+
 
 # =============================================================================
 # Model Specifications Registry
 # =============================================================================
 
 MODEL_SPECS: dict[ModelSize, ModelSpec] = {
+    # ---------------------------------------------------------------------
+    # Test/Tiny models: For development and pipeline validation
+    # ---------------------------------------------------------------------
+    "test": ModelSpec(
+        name="test",
+        hidden_size=256,
+        num_layers=4,
+        num_heads=4,
+        num_kv_heads=None,  # MHA
+        intermediate_size=512,
+        vocab_size=65536,  # Match default vocab for compatibility
+        max_position_embeddings=2048,  # Short context for testing
+        description="Tiny model for testing pipelines and CI",
+    ),
+    "125M": ModelSpec(
+        name="125M",
+        hidden_size=768,
+        num_layers=12,
+        num_heads=12,
+        num_kv_heads=None,  # MHA
+        intermediate_size=3072,
+        max_position_embeddings=2048,  # Reasonable context for training
+        description="GPT-2 small equivalent, fits in 8GB for training",
+    ),
+    "350M": ModelSpec(
+        name="350M",
+        hidden_size=1024,
+        num_layers=24,
+        num_heads=16,
+        num_kv_heads=None,  # MHA
+        intermediate_size=4096,
+        max_position_embeddings=2048,  # Reasonable context for training
+        description="GPT-2 medium equivalent, fits in 16GB for training",
+    ),
     # ---------------------------------------------------------------------
     # Small models (1B-3B): Single consumer GPU
     # ---------------------------------------------------------------------
