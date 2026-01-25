@@ -23,14 +23,21 @@ class TestTritterConfig:
     """Test suite for TritterConfig class."""
 
     def test_default_config_3b(self) -> None:
-        """Test default 3B model configuration."""
+        """Test default 3B model configuration.
+
+        Why: Uses centralized model specs from model_specs.py. 3B is the default
+        consumer GPU model with balanced architecture for RTX 3080/4070 class GPUs.
+        """
+        from tritter.core.model_specs import get_model_spec
+
         config = TritterConfig()
+        spec = get_model_spec("3B")
 
         assert config.model_size == "3B"
-        assert config.hidden_size == 2048
-        assert config.num_layers == 24
-        assert config.num_heads == 16
-        assert config.head_dim == 128
+        assert config.hidden_size == spec.hidden_size
+        assert config.num_layers == spec.num_layers
+        assert config.num_heads == spec.num_heads
+        assert config.head_dim == spec.effective_head_dim
         assert config.max_position_embeddings == 131072  # 128K
 
     def test_config_7b(self) -> None:
@@ -95,3 +102,172 @@ class TestTritterConfig:
         assert "text" in config.modalities
         assert "code" in config.modalities
         assert "image" not in config.modalities
+
+    def test_attention_mode_defaults(self) -> None:
+        """Test default attention mode configuration.
+
+        Validates that attention_mode defaults to "causal" for standard autoregressive
+        pretraining and generation use cases.
+        """
+        config = TritterConfig()
+
+        assert config.attention_mode == "causal"
+        assert config.use_sliding_window is False
+        assert config.sliding_window_size is None
+        assert config.use_attention_sinks is False
+        assert config.num_sink_tokens == 4
+
+    def test_attention_mode_bidirectional(self) -> None:
+        """Test bidirectional attention mode configuration.
+
+        Validates that bidirectional mode can be set for semantic embedding extraction
+        where all tokens attend to all other tokens.
+        """
+        config = TritterConfig(attention_mode="bidirectional")
+
+        assert config.attention_mode == "bidirectional"
+
+    def test_attention_mode_prefix_lm(self) -> None:
+        """Test prefix-LM attention mode configuration.
+
+        Validates that prefix-LM mode can be configured for instruction tuning where
+        the prefix (instructions) uses bidirectional attention and response uses causal.
+        """
+        config = TritterConfig(attention_mode="prefix_lm")
+
+        assert config.attention_mode == "prefix_lm"
+
+    def test_attention_mode_embedding(self) -> None:
+        """Test embedding attention mode configuration.
+
+        Validates that embedding mode (Coconut-style continuous reasoning) can be set
+        for latent refinement in continuous embedding space.
+        """
+        config = TritterConfig(attention_mode="embedding")
+
+        assert config.attention_mode == "embedding"
+
+    def test_invalid_attention_mode_raises_error(self) -> None:
+        """Test that invalid attention mode raises assertion error.
+
+        Validates fail-fast behavior for unsupported attention patterns to catch
+        configuration errors at init time.
+        """
+        with pytest.raises(AssertionError):
+            TritterConfig(attention_mode="invalid_mode")
+
+    def test_sliding_window_configuration(self) -> None:
+        """Test sliding window attention configuration.
+
+        Validates that sliding window parameters can be configured together.
+        Sliding window bounds KV-cache to window_size tokens, reducing memory
+        from O(N²) to O(N*W).
+        """
+        config = TritterConfig(
+            use_sliding_window=True,
+            sliding_window_size=4096,
+        )
+
+        assert config.use_sliding_window is True
+        assert config.sliding_window_size == 4096
+
+    def test_sliding_window_requires_positive_size(self) -> None:
+        """Test that sliding window requires positive size.
+
+        Validates that enabling use_sliding_window=True without a valid window_size
+        fails with assertion error. Zero or None window sizes would degenerate attention.
+        """
+        with pytest.raises(AssertionError):
+            TritterConfig(use_sliding_window=True, sliding_window_size=None)
+
+        with pytest.raises(AssertionError):
+            TritterConfig(use_sliding_window=True, sliding_window_size=0)
+
+        with pytest.raises(AssertionError):
+            TritterConfig(use_sliding_window=True, sliding_window_size=-1)
+
+    def test_attention_sinks_configuration(self) -> None:
+        """Test attention sinks (StreamingLLM) configuration.
+
+        Validates that attention sink parameters can be configured for streaming
+        generation. Sinks preserve early context (e.g., system prompt) during
+        KV-cache eviction.
+        """
+        config = TritterConfig(
+            use_attention_sinks=True,
+            num_sink_tokens=8,
+        )
+
+        assert config.use_attention_sinks is True
+        assert config.num_sink_tokens == 8
+
+    def test_attention_sinks_requires_positive_num_sink_tokens(self) -> None:
+        """Test that attention sinks requires positive num_sink_tokens.
+
+        Validates that enabling use_attention_sinks=True without a valid num_sink_tokens
+        fails with assertion error. Zero or negative sink tokens would make the
+        StreamingLLM attention pattern degenerate or invalid.
+        """
+        with pytest.raises(AssertionError):
+            TritterConfig(use_attention_sinks=True, num_sink_tokens=None)
+
+        with pytest.raises(AssertionError):
+            TritterConfig(use_attention_sinks=True, num_sink_tokens=0)
+
+        with pytest.raises(AssertionError):
+            TritterConfig(use_attention_sinks=True, num_sink_tokens=-1)
+
+    def test_attention_config_all_modes(self) -> None:
+        """Test all valid attention mode combinations.
+
+        Validates that each attention mode can be independently configured
+        without affecting other components.
+        """
+        for mode in ["causal", "bidirectional", "prefix_lm", "embedding"]:
+            config = TritterConfig(attention_mode=mode)
+            assert config.attention_mode == mode
+
+    def test_7b_preserves_custom_intermediate_size(self) -> None:
+        """Test that 7B model preserves custom intermediate_size.
+
+        Validates fix for issue #3: When model_size="7B", custom intermediate_size
+        values should not be overwritten. The auto-configuration should only update
+        intermediate_size if it's at the default 4x ratio to hidden_size.
+        """
+        # Test with explicit intermediate_size that differs from default
+        config = TritterConfig(model_size="7B", intermediate_size=12000)
+
+        assert config.model_size == "7B"
+        assert config.hidden_size == 4096  # Auto-configured
+        assert config.intermediate_size == 12000  # Preserved user value
+
+    def test_7b_auto_scales_default_intermediate_size(self) -> None:
+        """Test that 7B model auto-scales intermediate_size from spec.
+
+        Why: Uses centralized model specs from model_specs.py. 7B spec defines
+        optimized FFN dimensions (11008) following LLaMA-7B architecture.
+        """
+        from tritter.core.model_specs import get_model_spec
+
+        config = TritterConfig(model_size="7B")
+        spec = get_model_spec("7B")
+
+        assert config.model_size == "7B"
+        assert config.hidden_size == spec.hidden_size
+        assert config.intermediate_size == spec.intermediate_size  # From spec
+
+    def test_7b_with_custom_hidden_and_intermediate_size(self) -> None:
+        """Test 7B with both custom hidden_size and intermediate_size.
+
+        Validates that when both hidden_size and intermediate_size are explicitly
+        set, both values are preserved (no auto-configuration).
+        """
+        config = TritterConfig(
+            model_size="7B",
+            hidden_size=3072,
+            intermediate_size=9216,
+        )
+
+        assert config.model_size == "7B"
+        assert config.hidden_size == 3072  # Preserved
+        assert config.intermediate_size == 9216  # Preserved

@@ -5,7 +5,6 @@ Implements the quantization scheme from "The Era of 1-bit LLMs: All Large Langua
 are in 1.58 Bits" where weights are quantized to {-1, 0, 1}.
 """
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -40,10 +39,16 @@ class TernaryWeight(nn.Module):
         self.out_features = out_features
 
         # Full-precision weights for training
-        self.weight = nn.Parameter(torch.randn(out_features, in_features))
+        # Use Kaiming initialization for stability (same as nn.Linear)
+        self.weight = nn.Parameter(torch.empty(out_features, in_features))
+        nn.init.kaiming_uniform_(self.weight, a=5**0.5)
 
         # Scaling factors for quantization (per output channel)
-        self.scale = nn.Parameter(torch.ones(out_features, 1))
+        # Initialize to ~1/sqrt(in_features) to normalize output variance
+        # After quantization to {-1,0,+1}, each output has variance ~in_features/4
+        # Scale by 1/sqrt(in_features/4) = 2/sqrt(in_features) to get unit variance
+        init_scale = 2.0 / (in_features ** 0.5)
+        self.scale = nn.Parameter(torch.full((out_features, 1), init_scale))
 
         if bias:
             self.bias = nn.Parameter(torch.zeros(out_features))
@@ -74,27 +79,39 @@ class TernaryWeight(nn.Module):
         alpha = weights.abs().mean(dim=1, keepdim=True)
 
         # Quantize to {-1, 0, 1} using per-channel thresholds
-        quantized = torch.where(
-            weights > alpha,
-            torch.ones_like(weights),
-            torch.where(weights < -alpha, -torch.ones_like(weights), torch.zeros_like(weights)),
-        )
+        # Memory-efficient implementation using in-place operations
+        # Creates only one temporary tensor (quantized) and fills it in-place
+        # This minimizes peak memory usage for large layers like lm_head
+        quantized = torch.zeros_like(weights)
+        quantized.masked_fill_(weights > alpha, 1)
+        quantized.masked_fill_(weights < -alpha, -1)
+
         return quantized
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with quantized weights.
 
         Args:
-            x: Input tensor of shape (batch_size, in_features) or (batch_size, seq_len, in_features)
+            x: Input tensor of shape (batch_size, in_features) or
+               (batch_size, seq_len, in_features)
 
         Returns:
-            Output tensor of shape (batch_size, out_features) or (batch_size, seq_len, out_features)
+            Output tensor of shape (batch_size, out_features) or
+            (batch_size, seq_len, out_features)
 
-        Why: Implements straight-through estimator (STE) for gradient flow. During forward pass,
-        weights are quantized to {-1, 0, 1}, but gradients flow through as if quantization was
-        identity function. This is achieved by detaching quantized weights and adding back the
-        full-precision weights for autograd. In eval mode, quantized weights are cached to avoid
-        repeated quantization overhead, significantly improving inference speed.
+        Why: Implements straight-through estimator (STE) for gradient flow. STE is required
+        because quantization is non-differentiable (hard thresholding has zero gradients
+        almost everywhere). Without STE, gradients cannot flow back to update weights.
+
+        How STE works:
+        - Forward pass: Uses quantized weights q = quantize(w) for computation
+        - Backward pass: Treats quantization as identity, so dq/dw = 1
+        - Implementation: q_ste = w + (q - w).detach()
+          * Forward: Evaluates to q (quantized weights are used)
+          * Backward: dq_ste/dw = 1 + 0 = 1 (gradient flows through w)
+
+        In eval mode, quantized weights are cached to avoid repeated quantization,
+        significantly improving inference speed.
         """
         # Use cached quantized weights in eval mode for efficiency
         if not self.training:
@@ -110,12 +127,16 @@ class TernaryWeight(nn.Module):
             self._cache_valid = False
 
         # Implement straight-through estimator (STE)
-        # Detach quantized weights from computation graph, then add gradient path
-        # through full-precision weights. This allows gradients to flow during backprop
-        # while using quantized weights during forward pass.
+        # STE is required because quantization is non-differentiable (hard thresholding
+        # has zero gradients almost everywhere). Without STE, gradients cannot flow
+        # back to update the full-precision shadow weights.
+        #
+        # Formula: q_ste = w + (q - w).detach()
+        #   Forward:  Evaluates to q (quantized weights used in computation)
+        #   Backward: ∂q_ste/∂w = 1 + 0 = 1 (gradients flow to full-precision weights)
         if self.training:
-            # STE: gradient flows through self.weight, not through quantization
-            quantized_weight = quantized_weight.detach() + self.weight - self.weight.detach()
+            # STE: forward uses quantized, backward flows through self.weight
+            quantized_weight = self.weight + (quantized_weight - self.weight).detach()
 
         # Apply per-channel scaling
         scaled_weight = quantized_weight * self.scale

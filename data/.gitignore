@@ -1,0 +1,17 @@
+# Ignore all data files except documentation
+*.jsonl
+*.json.gz
+*.parquet
+*.arrow
+*.csv
+*.tsv
+
+# Keep curated repo list and README
+!curated_repos.json
+!README.md
+!.gitignore
+
+# Ignore raw and processed directories
+raw/
+processed/
+curated/*.jsonl

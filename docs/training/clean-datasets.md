@@ -130,6 +130,44 @@ No formal dataset exists—requires custom collection from these repositories.
 
 ---
 
+## Triton GPU kernel datasets: custom curation required
+
+Triton (OpenAI's GPU kernel language) has no pre-built datasets. Requires custom curation from ML framework codebases.
+
+### Primary Triton sources (permissive licenses)
+
+| Repository | License | Content |
+|------------|---------|---------|
+| `openai/triton` | MIT | Tutorials, examples, compiler tests |
+| `pytorch/pytorch` | BSD-3 | Inductor backend kernels (`torch/_inductor/triton_ops`) |
+| `google/jax` | Apache-2.0 | Pallas kernels (Triton-based) |
+| `facebookresearch/xformers` | BSD-3 | Memory-efficient attention kernels |
+| `Dao-AILab/flash-attention` | BSD-3 | FlashAttention Triton implementations |
+| `triton-lang/triton` | MIT | Language examples and tests |
+
+### Estimated token counts
+
+| Source | Estimate |
+|--------|----------|
+| PyTorch inductor kernels | ~500K tokens |
+| FlashAttention | ~100K tokens |
+| xformers Triton kernels | ~200K tokens |
+| Triton tutorials/examples | ~50K tokens |
+| **Total** | ~1M tokens |
+
+**Note**: Triton is a low-resource language. Upsample 5-10x relative to Python to ensure adequate learning.
+
+### Quality considerations for Triton
+
+Triton kernels require special quality checks:
+- Bounds masking on `tl.load`/`tl.store` (memory safety)
+- Appropriate block sizes (GPU resource limits)
+- Proper `tl.program_id` usage (parallelization)
+
+See [SPEC-007](specs/SPEC-007-dataset-quality-gates.md) for Triton-specific quality gates.
+
+---
+
 ## Function-level semantic understanding datasets
 
 These datasets directly support the embedding-prediction at function/code-block semantic level requirement.
