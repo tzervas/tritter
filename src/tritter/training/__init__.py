@@ -71,6 +71,18 @@ from tritter.training.lora import (
     merge_lora_weights,
     save_lora_adapters,
 )
+from tritter.training.optimization import (
+    GradientPredictor,
+    PhaseConfig,
+    PhaseTrainer,
+    PredictionConfig,
+    TernaryConfig,
+    TernaryGradientAccumulator,
+    TernaryOptimizer,
+    TrainingPhase,
+    VSAConfig,
+    VSAGradientCompressor,
+)
 from tritter.training.trainer import Trainer, TrainingConfig, TrainingMetrics, TrainingProgress
 
 
@@ -125,7 +137,7 @@ class CurriculumScheduler:
         )
 
 
-# Export data loading utilities, trainer, and LoRA
+# Export data loading utilities, trainer, LoRA, and optimization
 __all__ = [
     # Data loading
     "CodeDataset",
@@ -150,6 +162,17 @@ __all__ = [
     "load_lora_adapters",
     "merge_lora_weights",
     "save_lora_adapters",
+    # Optimization (extractable sub-module)
+    "GradientPredictor",
+    "PhaseConfig",
+    "PhaseTrainer",
+    "PredictionConfig",
+    "TernaryConfig",
+    "TernaryGradientAccumulator",
+    "TernaryOptimizer",
+    "TrainingPhase",
+    "VSAConfig",
+    "VSAGradientCompressor",
 ]
 
 # TODO: Phase 6 - Export EmbeddingPredictionLoss and CurriculumScheduler

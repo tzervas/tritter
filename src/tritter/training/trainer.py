@@ -99,7 +99,7 @@ class TrainingProgress:
         self.step_times: list[float] = []
         self.current_status = self.STATUS_TRAINING
         self.last_metrics: TrainingMetrics | None = None
-        self._last_update_time: float = 0.0
+        self._last_update_time: float | None = None
 
     def _write(self, text: str, end: str = "\n") -> None:
         """Write to output stream."""
@@ -178,8 +178,8 @@ class TrainingProgress:
         """
         now = time.time()
 
-        # Track step timing
-        if len(self.step_times) > 0:
+        # Track step timing (need at least one previous timestamp to compute delta)
+        if self._last_update_time is not None:
             step_time = now - self._last_update_time
             self.step_times.append(step_time)
         self._last_update_time = now
