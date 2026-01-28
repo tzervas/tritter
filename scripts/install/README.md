@@ -4,7 +4,7 @@ This directory contains installation scripts for setting up the Tritter developm
 
 ## Quick Start
 
-### Full Development Setup (Recommended)
+### Full Development Setup (Recommended, UV-first)
 
 ```bash
 cd scripts/install
@@ -29,6 +29,14 @@ If you already have Python 3.12+ and CUDA installed:
 cd scripts/install
 chmod +x install-minimal.sh
 ./install-minimal.sh
+```
+
+UV-based dev install (recommended):
+
+```bash
+uv venv --python 3.13 .venv
+source .venv/bin/activate
+uv pip install -e ".[dev,training,inference,curation,extras]"
 ```
 
 ## Script Options
@@ -151,6 +159,15 @@ RTX 5080, 5090, and other Blackwell GPUs require PyTorch nightly:
 ./install-dev-debian.sh --blackwell
 ```
 
+Pinned nightly (for SM_120 stability):
+
+```bash
+export TRITTER_BLACKWELL_TORCH_VERSION="2.11.0.dev20260123+cu128"
+# Optional Triton pin (if needed)
+export TRITTER_BLACKWELL_TRITON_VERSION="3.6.0+git9844da95"
+./install-dev-debian.sh --blackwell
+```
+
 This installs PyTorch from the nightly channel with SM_120 (Blackwell) support.
 
 See [docs/adr/004-blackwell-gpu-support.md](../../docs/adr/004-blackwell-gpu-support.md) for details.
@@ -171,6 +188,14 @@ For systems with limited resources:
 - Use smaller models (1B, 3B)
 - Enable gradient checkpointing
 - Use QLoRA instead of full fine-tuning
+
+Pinned nightly example:
+
+```bash
+export TRITTER_BLACKWELL_TORCH_VERSION="2.11.0.dev20260123+cu128"
+export TRITTER_BLACKWELL_TRITON_VERSION="3.6.0+git9844da95"
+./install-minimal.sh --blackwell
+```
 - Enable layer streaming for inference
 
 Check feasibility:

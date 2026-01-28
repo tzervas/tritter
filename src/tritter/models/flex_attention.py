@@ -16,6 +16,7 @@ avoids recompilation for same sequence structure during training.
 """
 
 import sys
+from collections import OrderedDict
 from collections.abc import Callable
 from typing import Optional
 
@@ -63,6 +64,46 @@ else:
     BlockMask = None  # type: ignore
     create_block_mask = None  # type: ignore
     flex_attention = None  # type: ignore
+
+
+_BLOCK_MASK_CACHE: "OrderedDict[tuple, BlockMask | None]" = OrderedDict()
+_BLOCK_MASK_CACHE_MAX = 32
+
+
+def _config_cache_key(config: TritterConfig) -> tuple:
+    return (
+        config.attention_mode,
+        config.use_sliding_window,
+        config.sliding_window_size,
+        config.use_attention_sinks,
+        config.num_sink_tokens,
+        config.use_streaming_llm,
+    )
+
+
+def _doc_ids_cache_key(doc_ids: Tensor | None) -> tuple | None:
+    if doc_ids is None:
+        return None
+    return (
+        tuple(doc_ids.shape),
+        str(doc_ids.dtype),
+        doc_ids.device.type,
+        doc_ids.data_ptr(),
+    )
+
+
+def _cache_get(key: tuple) -> Optional["BlockMask"]:
+    if key not in _BLOCK_MASK_CACHE:
+        return None
+    _BLOCK_MASK_CACHE.move_to_end(key)
+    return _BLOCK_MASK_CACHE[key]
+
+
+def _cache_put(key: tuple, value: Optional["BlockMask"]) -> None:
+    _BLOCK_MASK_CACHE[key] = value
+    _BLOCK_MASK_CACHE.move_to_end(key)
+    while len(_BLOCK_MASK_CACHE) > _BLOCK_MASK_CACHE_MAX:
+        _BLOCK_MASK_CACHE.popitem(last=False)
 
 
 def create_attention_mask(
@@ -223,6 +264,12 @@ def create_attention_mask(
             )
         mask_functions.append(document_mask(doc_ids))
 
+    # Cache lookup (only for FlexAttention-supported masks)
+    cache_key = (_config_cache_key(config), seq_len, device, _doc_ids_cache_key(doc_ids))
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     # If only simple causal mask and no doc_ids, use SDPA is_causal=True
     # Why: FlexAttention has overhead (kernel compilation, dispatch). For simple
     # causal masking, SDPA with is_causal=True is faster and uses less memory.
@@ -265,6 +312,7 @@ def create_attention_mask(
         device=device,
     )
 
+    _cache_put(cache_key, block_mask)
     return block_mask
 
 

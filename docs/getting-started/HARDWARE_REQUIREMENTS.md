@@ -54,6 +54,15 @@ pip install -e ".[dev]"
 pip install torch triton --pre --index-url https://download.pytorch.org/whl/nightly/cu128
 ```
 
+Pinned nightly (SM_120 stability):
+
+```bash
+export TRITTER_BLACKWELL_TORCH_VERSION="2.11.0.dev20260123+cu128"
+export TRITTER_BLACKWELL_TRITON_VERSION="3.6.0+git9844da95"
+uv pip install "torch==${TRITTER_BLACKWELL_TORCH_VERSION}" --pre --index-url https://download.pytorch.org/whl/nightly/cu128
+uv pip install "triton==${TRITTER_BLACKWELL_TRITON_VERSION}" --pre
+```
+
 **Verification**:
 
 ```bash

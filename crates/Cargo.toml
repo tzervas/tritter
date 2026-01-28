@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "tritter-accel",
+    "tr-tools",
+    "mcp-tritter-server",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tzervas/tritter"
+
+[workspace.dependencies]
+# PyO3 and NumPy
+pyo3 = { version = "0.22", features = ["extension-module"] }
+numpy = "0.22"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# rust-ai ecosystem (from crates.io)
+rust-ai-core = "0.2.7"
+bitnet-quantize = "0.1.1"
+trit-vsa = "0.1.1"
+vsa-optim-rs = "0.1.1"

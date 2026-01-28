@@ -54,7 +54,7 @@ Production inference will use KNN/VQ rounding instead of argmax token selection,
 
 Requires Python 3.12 or 3.13, and CUDA 12.1+ for GPU acceleration.
 
-### Basic Installation
+### Basic Installation (UV preferred)
 
 ```bash
 # Clone repository
@@ -65,17 +65,31 @@ cd tritter
 uv venv --python 3.13 .venv
 source .venv/bin/activate
 
-# Install PyTorch with CUDA support
+# Install PyTorch (standard CUDA)
 uv pip install torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
 
-# Install with development dependencies
-uv pip install -e ".[dev]"
+# RTX 50-series (SM_120) pinned nightly
+# export TRITTER_BLACKWELL_TORCH_VERSION="2.11.0.dev20260123+cu128"
+# export TRITTER_BLACKWELL_TRITON_VERSION="3.6.0+git9844da95"
+# uv pip install "torch==${TRITTER_BLACKWELL_TORCH_VERSION}" --pre --index-url https://download.pytorch.org/whl/nightly/cu128
+# uv pip install "triton==${TRITTER_BLACKWELL_TRITON_VERSION}" --pre
+
+# Install with development dependencies (extras recommended)
+uv pip install -e ".[dev,training,inference,curation,extras]"
 ```
 
 ### Verify CUDA Setup
 
 ```bash
 python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0)}')"
+```
+
+Pip fallback:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev,training,inference,curation,extras]"
 ```
 
 See [`docs/CUDA_SETUP.md`](docs/CUDA_SETUP.md) for detailed CUDA configuration and troubleshooting.

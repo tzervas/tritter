@@ -1,6 +1,6 @@
 [project]
 name = "tritter"
-version = "0.1.0"
+version = "0.2.0"
 description = "Multimodal AI model with BitNet 1.58-bit quantization, 128K context, any-to-any (text/code/image/audio) fusion"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -28,7 +28,7 @@ classifiers = [
 dependencies = [
     # NOTE: For RTX 50-series (Blackwell, SM_120), install PyTorch nightly separately:
     #   uv pip install torch triton --pre --index-url https://download.pytorch.org/whl/nightly/cu128
-    # Pinned nightly version with sm_120 support: torch==2.11.0.dev20260124+cu128
+    # Pinned nightly version with sm_120 support: torch==2.11.0.dev20260123+cu128
     # See docs/HARDWARE_REQUIREMENTS.md and docs/adr/004-blackwell-gpu-support.md
     "torch>=2.5.0",
     "numpy>=1.24.0",
@@ -51,12 +51,18 @@ dev = [
     "pre-commit>=3.6.0",
 ]
 
+extras = [
+    "faiss-cpu>=1.8.0",
+    "safetensors>=0.4.3",
+]
+
 inference = [
     "vllm>=0.6.0",
 ]
 
 training = [
     "nanotron>=0.3.0",
+    "vsa-training-optimizer>=0.1.0",  # VSA/ternary gradient optimization
 ]
 
 curation = [
@@ -64,7 +70,7 @@ curation = [
 ]
 
 all = [
-    "tritter[dev,inference,training,curation]",
+    "tritter[dev,inference,training,curation,extras]",
 ]
 
 [project.scripts]
@@ -123,6 +129,13 @@ pythonpath = [
 markers = [
     "gpu: marks tests as requiring GPU hardware (deselect with '-m \"not gpu\"')",
     "slow: marks tests as slow running (deselect with '-m \"not slow\"')",
+]
+filterwarnings = [
+    "ignore:`torch.nn.utils.weight_norm` is deprecated:FutureWarning",
+    "ignore:`torch.jit.script_method` is deprecated:DeprecationWarning",
+    "ignore:The argument 'device' of Tensor.pin_memory\\(\\) is deprecated:DeprecationWarning",
+    "ignore:The argument 'device' of Tensor.is_pinned\\(\\) is deprecated:DeprecationWarning",
+    "ignore:Detected call of `lr_scheduler.step\\(\\)` before `optimizer.step\\(\\)`:UserWarning",
 ]
 
 [tool.coverage.run]

@@ -421,7 +421,6 @@ class TestFlexAttentionIntegration:
         assert torch.isfinite(key.grad).all()
         assert torch.isfinite(value.grad).all()
 
-    @pytest.mark.skip(reason="BlockMask caching not yet implemented - masks are equivalent but not identical objects")
     def test_block_mask_caching(self) -> None:
         """Test BlockMask caching reuses masks for same sequence structure.
 
