@@ -43,6 +43,7 @@ from vsa_optimizer import (
     hyperdimensional_bundle,
     ternary_quantize,
 )
+from tritter.training.optimization.vsa_utils import VSAKeyedBundler, make_random_keys
 
 __all__ = [
     # Gradient prediction
@@ -59,6 +60,8 @@ __all__ = [
     "hyperdimensional_bind",
     "hyperdimensional_bundle",
     "ternary_quantize",
+    "VSAKeyedBundler",
+    "make_random_keys",
     # Phase-based training
     "PhaseConfig",
     "PhaseTrainer",

@@ -1,0 +1,46 @@
+[package]
+name = "tritter-accel"
+version = "0.2.0"
+edition = "2021"
+description = "Rust acceleration for Tritter - BitNet quantization, VSA ops, and ternary matmul"
+license = "MIT"
+repository = "https://github.com/tzervas/tritter"
+keywords = ["bitnet", "quantization", "vsa", "ternary", "ai"]
+categories = ["science", "mathematics"]
+
+[lib]
+name = "tritter_accel"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Core rust-ai ecosystem from crates.io (github.com/tzervas)
+rust-ai-core = "0.2.7"
+bitnet-quantize = "0.1.1"
+trit-vsa = "0.1.1"
+vsa-optim-rs = "0.1.1"
+
+# PyO3 for Python bindings
+pyo3 = { version = "0.22", features = ["extension-module"] }
+numpy = "0.22"
+
+# Tensor operations
+ndarray = "0.16"
+
+# Error handling
+thiserror = "2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[features]
+default = []
+cuda = ["rust-ai-core/cuda", "bitnet-quantize/cuda"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3

@@ -110,6 +110,10 @@ class ValidationRunner:
         for parent in [current, *current.parents]:
             if (parent / "pyproject.toml").exists():
                 return parent
+            # Monorepo fallback (workspace root containing tritter/)
+            tritter_pyproject = parent / "tritter" / "pyproject.toml"
+            if tritter_pyproject.exists():
+                return tritter_pyproject.parent
         return current
 
     def _run_command(

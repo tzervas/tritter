@@ -16,10 +16,13 @@ available memory and adjusts budgets accordingly.
 
 from __future__ import annotations
 
+import json
 import platform
 import subprocess
+import time
 from dataclasses import dataclass
-from typing import Literal
+from pathlib import Path
+from typing import Literal, Mapping
 
 import torch
 
@@ -239,6 +242,75 @@ def get_memory_status() -> dict[str, float]:
         "available_budget": budget,
         "os_reserved": info.os_reserved_gb,
     }
+
+
+def log_memory_snapshot(
+    log_path: str | Path,
+    tag: str,
+    extra: Mapping[str, str | float | int] | None = None,
+) -> dict[str, str | float | int]:
+    """Log a memory snapshot to a JSONL file.
+
+    Args:
+        log_path: Path to the JSONL log file
+        tag: Snapshot tag (e.g., "model_loaded")
+        extra: Optional extra metadata to include
+
+    Returns:
+        Snapshot dictionary written to disk
+
+    Why: Persistent memory logs enable measured VRAM reporting and help
+    correlate configuration changes with actual memory usage.
+    """
+    status = get_memory_status()
+    payload: dict[str, str | float | int] = {
+        "timestamp": time.time(),
+        "tag": tag,
+        **status,
+    }
+    if extra:
+        payload.update(extra)
+
+    log_path = Path(log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload) + "\n")
+
+    return payload
+
+
+def load_latest_memory_snapshot(
+    log_path: str | Path,
+    tag: str | None = None,
+) -> dict[str, str | float | int] | None:
+    """Load the most recent memory snapshot from a JSONL log.
+
+    Args:
+        log_path: Path to the JSONL log file
+        tag: Optional tag filter
+
+    Returns:
+        Latest snapshot dictionary, or None if not found
+
+    Why: Enables tooling to reuse measured memory data for naming and reports
+    without re-running profiling.
+    """
+    log_path = Path(log_path)
+    if not log_path.exists():
+        return None
+
+    latest: dict[str, str | float | int] | None = None
+    with log_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if tag and entry.get("tag") != tag:
+                continue
+            latest = entry
+
+    return latest
 
 
 def check_memory_fit(

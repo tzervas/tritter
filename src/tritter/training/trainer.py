@@ -12,10 +12,11 @@ curriculum scheduling.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TextIO
@@ -28,6 +29,8 @@ from torch.utils.data import DataLoader
 
 from tritter.core.config import TritterConfig
 from tritter.models.architecture import TritterModel
+from tritter.utils.memory_utils import log_memory_snapshot
+from tritter.utils.profile_naming import resolve_profile_name
 
 
 @dataclass
@@ -320,6 +323,15 @@ class TrainingConfig:
     weight_decay: float = 0.1
     max_grad_norm: float = 1.0
 
+    # Training mode
+    training_mode: str = "pretrain"
+    """Training mode tag for profiling.
+
+    Why: Differentiates full pretraining from fine-tuning and adapter-based
+    training in naming and reporting. "inference" is supported for profile
+    naming helpers but should not be used in the training loop.
+    """
+
     # Schedule
     warmup_steps: int = 1000
     max_steps: int = 100000
@@ -335,6 +347,10 @@ class TrainingConfig:
 
     # Logging
     log_steps: int = 10
+
+    # Profile naming overrides
+    profile_name_override: str | None = None
+    profile_tag_overrides: dict[str, str | float] = field(default_factory=dict)
 
     # Mixed precision
     use_amp: bool = True
@@ -353,6 +369,13 @@ class TrainingConfig:
         assert self.gradient_accumulation_steps > 0, (
             f"gradient_accumulation_steps must be positive, got {self.gradient_accumulation_steps}"
         )
+
+        valid_training_modes = {"pretrain", "finetune", "lora", "qlora", "inference"}
+        if self.training_mode not in valid_training_modes:
+            raise ValueError(
+                "training_mode must be one of "
+                f"{sorted(valid_training_modes)}, got {self.training_mode}"
+            )
 
 
 class Trainer:
@@ -406,6 +429,51 @@ class Trainer:
         # Move model to device
         self.model.to(self.device)
 
+        # Create output directory
+        Path(self.config.output_dir).mkdir(parents=True, exist_ok=True)
+
+        # Profile naming and memory logging
+        raw_vram_gb = 0.0
+        loaded_vram_gb = 0.0
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+            device_index = self.device.index or 0
+            raw_vram_gb = torch.cuda.get_device_properties(device_index).total_memory / 1e9
+            loaded_vram_gb = torch.cuda.memory_allocated(device_index) / 1e9
+
+        tag_overrides = {
+            **model_config.profile_tag_overrides,
+            **self.config.profile_tag_overrides,
+            "optimizer": "adamw",
+        }
+        profile_name, profile_metadata = resolve_profile_name(
+            config=model_config,
+            training_mode=self.config.training_mode,
+            use_amp=self.config.use_amp,
+            vram_raw_gb=raw_vram_gb if raw_vram_gb > 0 else None,
+            vram_loaded_gb=loaded_vram_gb if loaded_vram_gb > 0 else None,
+            name_override=self.config.profile_name_override or model_config.profile_name_override,
+            optimizer_name="adamw",
+            tag_overrides=tag_overrides,
+        )
+        self.profile_name = profile_name
+        self.profile_metadata = profile_metadata
+
+        profile_payload = profile_metadata.to_dict()
+        profile_payload["name"] = profile_name
+        profile_path = Path(self.config.output_dir) / "profile.json"
+        profile_path.write_text(json.dumps(profile_payload, indent=2))
+
+        log_memory_snapshot(
+            Path(self.config.output_dir) / "memory_logs.jsonl",
+            tag="model_loaded",
+            extra={
+                "raw_vram_gb": raw_vram_gb,
+                "loaded_vram_gb": loaded_vram_gb,
+                "profile_name": profile_name,
+            },
+        )
+
         # Optimizer (created after model.to(device))
         self.optimizer = self._create_optimizer()
 
@@ -440,7 +508,7 @@ class Trainer:
         ) if verbose else None
 
         # Create output directory
-        Path(self.config.output_dir).mkdir(parents=True, exist_ok=True)
+        # (already created before profile logging)
 
     def _create_optimizer(self) -> AdamW:
         """Create AdamW optimizer with weight decay.

@@ -70,8 +70,18 @@ class TransferEngine:
         if src.device.type != "cpu":
             raise ValueError(f"Source must be on CPU, got {src.device}")
 
+        if self.use_pinned_memory and not src.is_pinned():
+            src = src.pin_memory()
+        elif non_blocking and not src.is_pinned():
+            # Non-blocking H2D transfers require pinned memory
+            non_blocking = False
+
         with torch.cuda.stream(self._transfer_stream):
             if dst is not None:
+                if dst.device != self.device:
+                    raise ValueError(
+                        f"Destination device mismatch: expected {self.device}, got {dst.device}"
+                    )
                 dst.copy_(src, non_blocking=non_blocking)
                 result = dst
             else:
@@ -94,6 +104,10 @@ class TransferEngine:
         for event in self._pending_transfers:
             event.synchronize()
         self._pending_transfers.clear()
+
+        # Ensure visibility on the default stream
+        self._transfer_stream.synchronize()
+        torch.cuda.synchronize(self.device)
 
     def sync_stream(self) -> None:
         """Synchronize the transfer stream with current stream.

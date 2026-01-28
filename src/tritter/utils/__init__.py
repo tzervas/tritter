@@ -36,7 +36,15 @@ from tritter.utils.memory_utils import (
     check_memory_fit,
     get_memory_status,
     get_system_memory_info,
+    load_latest_memory_snapshot,
+    log_memory_snapshot,
     print_memory_report,
+)
+from tritter.utils.profile_naming import (
+    ProfileNamingMetadata,
+    build_profile_metadata,
+    format_profile_name,
+    resolve_profile_name,
 )
 
 __all__ = [
@@ -63,5 +71,12 @@ __all__ = [
     "get_memory_status",
     "calculate_safe_memory_budget",
     "check_memory_fit",
+    "log_memory_snapshot",
+    "load_latest_memory_snapshot",
     "print_memory_report",
+    # Profile naming
+    "ProfileNamingMetadata",
+    "build_profile_metadata",
+    "format_profile_name",
+    "resolve_profile_name",
 ]

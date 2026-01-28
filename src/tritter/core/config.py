@@ -209,6 +209,34 @@ class TritterConfig:
     target_device: str = "cuda"  # RTX 5080 optimized
     max_memory_gb: int = 16  # GDDR7
 
+    # Acceleration profiles
+    accel_profile: str = "auto"
+    """Acceleration profile selector.
+
+    Why: Enables swapping between baseline and accelerated backends (e.g.,
+    Rust bindings) without changing core model code.
+    """
+
+    accel_feature_flags: list[str] = field(default_factory=list)
+    """Optional feature flags for accelerated backends.
+
+    Why: Fine-grained switches help isolate kernel experiments or backends
+    while keeping the profile name deterministic.
+    """
+
+    profile_name_override: str | None = None
+    """Optional override for auto-generated profile names.
+
+    Why: Allows custom experiment labels while retaining metadata logs.
+    """
+
+    profile_tag_overrides: dict[str, str | float] = field(default_factory=dict)
+    """Optional overrides for profile naming tags.
+
+    Why: Users can override specific tags (e.g., training mode) without
+    redefining the full naming logic.
+    """
+
     # Training
     dropout: float = 0.1
     layer_norm_eps: float = 1e-5

@@ -54,6 +54,8 @@ INSTALL_CUDA=true
 VENV_PATH="venv"
 INSTALL_BLACKWELL=false
 SKIP_VENV=false
+BLACKWELL_TORCH_VERSION="${TRITTER_BLACKWELL_TORCH_VERSION:-2.11.0.dev20260123+cu128}"
+BLACKWELL_TRITON_VERSION="${TRITTER_BLACKWELL_TRITON_VERSION:-3.6.0+git9844da95}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -328,8 +330,10 @@ install_pytorch() {
     pip install --upgrade pip setuptools wheel
 
     if [[ "$INSTALL_BLACKWELL" == "true" ]]; then
-        info "Installing PyTorch nightly for RTX 50-series (Blackwell) support..."
-        pip install torch triton --pre --index-url https://download.pytorch.org/whl/nightly/cu128
+        info "Installing pinned PyTorch nightly for RTX 50-series (Blackwell) support: $BLACKWELL_TORCH_VERSION"
+        pip install "torch==${BLACKWELL_TORCH_VERSION}" --pre --index-url https://download.pytorch.org/whl/nightly/cu128
+        info "Installing pinned Triton for Blackwell: $BLACKWELL_TRITON_VERSION"
+        pip install "triton==${BLACKWELL_TRITON_VERSION}" --pre
     elif [[ "$INSTALL_CUDA" == "true" ]]; then
         info "Installing PyTorch with CUDA 12.x support..."
         pip install torch>=2.5.0 --index-url https://download.pytorch.org/whl/cu124
