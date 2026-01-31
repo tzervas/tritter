@@ -848,7 +848,7 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
         import tritter_accel as ta
         param_count = int(spec.total_params_billions() * 1e9)
         hidden_dim = spec.hidden_size
-        num_layers = spec.num_hidden_layers
+        num_layers = spec.num_layers
         dtype = "bf16" if config.use_amp else "f32"
 
         params_mem, grads_mem, opt_mem, acts_mem, total_mem = ta.estimate_training_memory(
