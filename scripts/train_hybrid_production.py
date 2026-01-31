@@ -689,7 +689,7 @@ class RecoveryCheckpointManager:
                 shutil.rmtree(oldest)
 
     def load_latest(self, model: nn.Module, optimizer, scaler=None) -> tuple[bool, int]:
-        """Load most recent recovery checkpoint."""
+        """Load most recent recovery checkpoint with OOM-safe CPU-first loading."""
         if not self.checkpoints:
             return False, 0
 
@@ -698,8 +698,33 @@ class RecoveryCheckpointManager:
         if not ckpt_path.exists():
             return False, 0
 
-        model.load_state_dict(torch.load(ckpt_path / "model.pt", weights_only=True))
-        optimizer.load_state_dict(torch.load(ckpt_path / "optimizer.pt", weights_only=True))
+        device = next(model.parameters()).device
+
+        # Load to CPU first, then move to GPU to prevent OOM during concurrent loading
+        # This prevents peak memory from exceeding GPU capacity
+
+        # 1. Load model state to CPU
+        model_state = torch.load(ckpt_path / "model.pt", weights_only=True, map_location="cpu")
+        model.load_state_dict(model_state)
+        del model_state
+        gc.collect()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+
+        # 2. Load optimizer state to CPU, then move to GPU
+        opt_state = torch.load(ckpt_path / "optimizer.pt", weights_only=True, map_location="cpu")
+        # Move optimizer state tensors to device
+        for state in opt_state['state'].values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(device)
+        optimizer.load_state_dict(opt_state)
+        del opt_state
+        gc.collect()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+
+        # 3. Load scaler (small, direct load is fine)
         if scaler is not None and (ckpt_path / "scaler.pt").exists():
             scaler.load_state_dict(torch.load(ckpt_path / "scaler.pt", weights_only=True))
 
@@ -817,6 +842,60 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
     config.gradient_memory_budget_mb = auto_config.gradient_memory_budget_mb
 
     spec = get_model_spec(config.model_size)
+
+    # Pre-flight memory check using tritter_accel (rust-ai-core)
+    try:
+        import tritter_accel as ta
+        param_count = int(spec.total_params_billions() * 1e9)
+        hidden_dim = spec.hidden_size
+        num_layers = spec.num_hidden_layers
+        dtype = "bf16" if config.use_amp else "f32"
+
+        params_mem, grads_mem, opt_mem, acts_mem, total_mem = ta.estimate_training_memory(
+            param_count, config.batch_size, config.max_seq_length,
+            hidden_dim, num_layers, dtype, True  # gradient_checkpointing=True
+        )
+
+        print(f"\n--- Pre-flight Memory Estimate (via rust-ai-core) ---")
+        print(f"  Parameters: {params_mem / 1024**3:.2f} GB")
+        print(f"  Gradients: {grads_mem / 1024**3:.2f} GB")
+        print(f"  Optimizer: {opt_mem / 1024**3:.2f} GB")
+        print(f"  Activations: {acts_mem / 1024**3:.2f} GB")
+        print(f"  Total Required: {total_mem / 1024**3:.2f} GB")
+        print(f"  GPU Available: {auto_config.gpu_memory_gb:.2f} GB")
+
+        # Check if training would fit
+        gpu_budget_bytes = int(auto_config.gpu_memory_gb * 0.90 * 1024**3)  # 90% of GPU for safety
+        tracker = ta.PyMemoryTracker(gpu_budget_bytes)
+        fits, required, available = tracker.would_training_fit(
+            param_count, config.batch_size, config.max_seq_length,
+            hidden_dim, num_layers, dtype, True
+        )
+
+        if not fits:
+            print(f"\n⚠️  WARNING: Training may not fit in GPU memory!")
+            print(f"    Required: {required / 1024**3:.2f} GB, Available: {available / 1024**3:.2f} GB")
+            print(f"    Consider: smaller batch size, shorter seq length, or gradient accumulation")
+
+            # Auto-reduce batch size if needed
+            while not fits and config.batch_size > 1:
+                config.batch_size = max(1, config.batch_size // 2)
+                config.gradient_accumulation_steps *= 2
+                fits, required, available = tracker.would_training_fit(
+                    param_count, config.batch_size, config.max_seq_length,
+                    hidden_dim, num_layers, dtype, True
+                )
+                print(f"    Auto-adjusting: batch_size={config.batch_size}, grad_accum={config.gradient_accumulation_steps}")
+
+            if not fits:
+                print(f"    ❌ Cannot fit even with batch_size=1. GPU too small for this model.")
+                print(f"    Consider: smaller model, shorter sequence length, or larger GPU")
+        else:
+            print(f"  ✓ Training will fit in GPU memory")
+    except ImportError:
+        print("\n(tritter_accel not available for pre-flight memory check)")
+    except Exception as e:
+        print(f"\n(Pre-flight memory check failed: {e})")
     print(f"\nModel: {config.model_size} ({spec.total_params_billions():.2f}B params)")
     print(f"Phase Config: WARMUP={config.phase.warmup_steps}, FULL≥{config.phase.min_full_steps}, PREDICT≤{config.phase.max_predict_horizon}")
 
@@ -923,6 +1002,12 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
                     print(f"\n{'=' * 50}")
                     print(f"RECOVERY {recovery_count + 1}/{config.max_recoveries}")
                     print(f"{'=' * 50}\n")
+
+                    # Clear GPU memory before loading checkpoint to prevent OOM
+                    optimizer.zero_grad(set_to_none=True)
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                    torch.cuda.synchronize()
 
                     success, recovered_step = recovery_manager.load_latest(model, optimizer, scaler)
                     if success:
