@@ -206,3 +206,41 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 checkpoints/
+
+# Security - Secrets and credentials
+*.pem
+*.key
+*credentials*
+*secrets*
+.env.*
+*.env
+.netrc
+.npmrc
+.pypirc
+huggingface_token.txt
+wandb_key.txt
+api_keys/
+
+# Model artifacts (too large for git)
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.gguf
+*.ggml
+model-*.zip
+weights/
+pretrained/
+
+# Training outputs
+runs/
+logs/
+tensorboard/
+*.tfevents.*
+wandb/
+mlruns/
+
+# HuggingFace cache
+.cache/huggingface/
+~/.cache/huggingface/
+

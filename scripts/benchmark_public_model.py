@@ -273,7 +273,13 @@ def train_hybrid(model, dataloader, config: BenchmarkConfig, device) -> dict:
             optimizer.zero_grad()
             if scaler is not None:
                 scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
+                try:
+                    scaler.unscale_(optimizer)
+                except RuntimeError:
+                    # Already unscaled, reset scaler
+                    scaler = GradScaler("cuda", enabled=True)
+                    optimizer.zero_grad()
+                    continue
             else:
                 loss.backward()
 
@@ -290,6 +296,10 @@ def train_hybrid(model, dataloader, config: BenchmarkConfig, device) -> dict:
                     optimizer.step()
 
                 backward_passes += 1
+            else:
+                # Invalid gradients - must still update scaler to reset state
+                if scaler is not None:
+                    scaler.update()
         else:
             # Use predicted gradients
             optimizer.zero_grad()
@@ -375,9 +385,21 @@ def train_full(model, dataloader, config: BenchmarkConfig, device) -> dict:
 
         if scaler is not None:
             scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
+            try:
+                scaler.unscale_(optimizer)
+            except RuntimeError:
+                scaler = GradScaler("cuda", enabled=True)
+                optimizer.zero_grad()
+                continue
         else:
             loss.backward()
+
+        grad_norm = sum(p.grad.norm().item() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5
+        if not math.isfinite(grad_norm):
+            if scaler is not None:
+                scaler.update()
+            optimizer.zero_grad()
+            continue
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 

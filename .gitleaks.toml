@@ -1,0 +1,64 @@
+# Gitleaks configuration for hybrid predictive backprop models
+title = "tritter gitleaks config"
+
+[extend]
+# Extend default rules
+useDefault = true
+
+# Allow paths (not secrets, just file patterns we allow)
+[allowlist]
+paths = [
+    '''.*_test\.py$''',
+    '''tests/.*''',
+    '''docs/.*\.md$''',
+    '''\.github/.*''',
+]
+
+# Custom rules for HuggingFace and model training
+[[rules]]
+id = "huggingface-token"
+description = "HuggingFace API Token"
+regex = '''(?i)(hf_[a-zA-Z0-9]{30,})'''
+tags = ["key", "huggingface"]
+
+[[rules]]
+id = "huggingface-write-token"
+description = "HuggingFace Write Token"
+regex = '''(?i)hf_[a-zA-Z0-9]+write[a-zA-Z0-9]*'''
+tags = ["key", "huggingface"]
+
+[[rules]]
+id = "wandb-key"
+description = "Weights & Biases API Key"
+regex = '''(?i)(wandb[_-]?api[_-]?key\s*[:=]\s*["\']?[a-z0-9]{40}["\']?)'''
+tags = ["key", "wandb"]
+
+[[rules]]
+id = "openai-key"
+description = "OpenAI API Key"
+regex = '''sk-[a-zA-Z0-9]{20,50}'''
+tags = ["key", "openai"]
+
+[[rules]]
+id = "anthropic-key"
+description = "Anthropic API Key"
+regex = '''sk-ant-api[0-9]{2}-[a-zA-Z0-9]{30,}'''
+tags = ["key", "anthropic"]
+
+# Files to ignore
+[allowlist.paths]
+regexes = [
+    '''.*\.lock$''',
+    '''.*requirements.*\.txt$''',
+    '''pyproject\.toml$''',
+    '''Cargo\.toml$''',
+    '''\.git/.*''',
+]
+
+# Ignore specific strings (false positives)
+[allowlist.regexes]
+regexes = [
+    '''example_token_placeholder''',
+    '''test_api_key_12345''',
+    '''YOUR_.*_HERE''',
+]
