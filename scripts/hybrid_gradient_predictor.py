@@ -106,44 +106,54 @@ class HybridGradientPredictor:
         self.alignment_history: deque[float] = deque(maxlen=20)
 
     def observe(self, gradients: dict[str, torch.Tensor], loss: float):
-        """Record new gradient observation and update method statistics."""
+        """Record new gradient observation and update method statistics.
+
+        Note: Gradients are stored on CPU to save GPU memory for large models.
+        """
         if not gradients:
             return
 
         # First, score previous predictions against this actual gradient
         self._score_predictions(gradients)
 
-        # Store gradient history
+        # Store gradient history (on CPU to save GPU memory)
         for name, grad in gradients.items():
             if not torch.isfinite(grad).all():
                 continue
 
+            # Move to CPU for storage
+            grad_cpu = grad.detach().cpu()
+
             # Initialize if needed
             if name not in self.gradient_history:
                 self.gradient_history[name] = deque(maxlen=self.history_length)
-                self.ema_gradients[name] = grad.clone()
+                self.ema_gradients[name] = grad_cpu.clone()
 
-            # Update history
-            self.gradient_history[name].append(grad.clone())
+            # Update history (CPU)
+            self.gradient_history[name].append(grad_cpu.clone())
 
-            # Update EMA
+            # Update EMA (CPU)
             self.ema_gradients[name] = (
                 self.ema_beta * self.ema_gradients[name] +
-                (1 - self.ema_beta) * grad
+                (1 - self.ema_beta) * grad_cpu
             )
 
         self.loss_history.append(loss)
         self._update_confidence()
 
     def _score_predictions(self, actual_gradients: dict[str, torch.Tensor]):
-        """Score previous predictions against actual gradients."""
+        """Score previous predictions against actual gradients.
+
+        Note: Predictions are stored on CPU, so actual gradients are moved to CPU for comparison.
+        """
         if not self._last_predictions:
             return
 
         for method, predictions in self._last_predictions.items():
             for name, pred in predictions.items():
                 if name in actual_gradients:
-                    actual = actual_gradients[name]
+                    # Move actual to CPU for comparison (predictions are on CPU)
+                    actual = actual_gradients[name].detach().cpu()
                     self.method_stats[method].update(pred, actual)
 
                     # Track alignment for confidence
@@ -282,10 +292,22 @@ class HybridGradientPredictor:
 
         return predicted
 
-    def predict(self, horizon: int = 1) -> dict[str, torch.Tensor]:
-        """Generate hybrid prediction combining all methods."""
+    def predict(self, horizon: int = 1, device: Optional[torch.device] = None) -> dict[str, torch.Tensor]:
+        """Generate hybrid prediction combining all methods.
+
+        Args:
+            horizon: Number of steps to predict ahead
+            device: Target device for predictions (default: cuda if available)
+
+        Returns:
+            Dictionary mapping parameter names to predicted gradients on target device
+        """
         if not self.gradient_history:
             return {}
+
+        # Default to CUDA if available
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Compute adaptive weights
         weights = self._compute_method_weights()
@@ -302,7 +324,7 @@ class HybridGradientPredictor:
         self._last_predictions = {m: {} for m in self.method_stats.keys()}
 
         for name in self.gradient_history.keys():
-            # Get prediction from each method
+            # Get prediction from each method (computed on CPU)
             predictions = {
                 "linear": self._predict_linear(name, horizon, damping),
                 "momentum": self._predict_momentum(name, horizon, damping),
@@ -316,7 +338,7 @@ class HybridGradientPredictor:
             if not valid_preds:
                 continue
 
-            # Store for scoring
+            # Store for scoring (keep on CPU)
             for method, pred in valid_preds.items():
                 self._last_predictions[method][name] = pred
 
@@ -333,7 +355,8 @@ class HybridGradientPredictor:
                 total_weight += w
 
             if combined is not None and total_weight > 0:
-                result[name] = combined / total_weight
+                # Move to target device (GPU) for application
+                result[name] = (combined / total_weight).to(device)
 
         return result
 
