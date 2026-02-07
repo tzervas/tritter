@@ -18,7 +18,6 @@ import math
 import statistics
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional
 
 import torch
 
@@ -26,6 +25,7 @@ import torch
 @dataclass
 class PredictorStats:
     """Statistics for tracking predictor accuracy."""
+
     recent_errors: deque = field(default_factory=lambda: deque(maxlen=20))
     cumulative_error: float = 0.0
     prediction_count: int = 0
@@ -134,8 +134,7 @@ class HybridGradientPredictor:
 
             # Update EMA (CPU)
             self.ema_gradients[name] = (
-                self.ema_beta * self.ema_gradients[name] +
-                (1 - self.ema_beta) * grad_cpu
+                self.ema_beta * self.ema_gradients[name] + (1 - self.ema_beta) * grad_cpu
             )
 
         self.loss_history.append(loss)
@@ -159,8 +158,7 @@ class HybridGradientPredictor:
                     # Track alignment for confidence
                     if method == "linear":  # Only track once per step
                         alignment = torch.nn.functional.cosine_similarity(
-                            pred.flatten().unsqueeze(0),
-                            actual.flatten().unsqueeze(0)
+                            pred.flatten().unsqueeze(0), actual.flatten().unsqueeze(0)
                         ).item()
                         self.alignment_history.append(alignment)
 
@@ -184,16 +182,11 @@ class HybridGradientPredictor:
         if total > 0:
             weights = {k: v / total for k, v in weights.items()}
         else:
-            weights = {k: 0.25 for k in self.method_stats.keys()}
+            weights = dict.fromkeys(self.method_stats.keys(), 0.25)
 
         return weights
 
-    def _predict_linear(
-        self,
-        name: str,
-        horizon: int,
-        damping: float
-    ) -> Optional[torch.Tensor]:
+    def _predict_linear(self, name: str, horizon: int, damping: float) -> torch.Tensor | None:
         """Linear extrapolation: g + velocity * horizon * damping."""
         history = self.gradient_history.get(name)
         if not history or len(history) < 2:
@@ -206,12 +199,7 @@ class HybridGradientPredictor:
         predicted = g_t + velocity * horizon * damping
         return self._clamp_prediction(predicted, g_t)
 
-    def _predict_momentum(
-        self,
-        name: str,
-        horizon: int,
-        damping: float
-    ) -> Optional[torch.Tensor]:
+    def _predict_momentum(self, name: str, horizon: int, damping: float) -> torch.Tensor | None:
         """Momentum-based: EMA + momentum * (current - EMA) * scaled_horizon."""
         history = self.gradient_history.get(name)
         ema = self.ema_gradients.get(name)
@@ -222,17 +210,12 @@ class HybridGradientPredictor:
         momentum = g_t - ema
 
         # Momentum decays over horizon
-        momentum_scale = damping * (1 - self.ema_beta ** horizon)
+        momentum_scale = damping * (1 - self.ema_beta**horizon)
         predicted = ema + momentum * (1 + momentum_scale)
 
         return self._clamp_prediction(predicted, g_t)
 
-    def _predict_quadratic(
-        self,
-        name: str,
-        horizon: int,
-        damping: float
-    ) -> Optional[torch.Tensor]:
+    def _predict_quadratic(self, name: str, horizon: int, damping: float) -> torch.Tensor | None:
         """Quadratic extrapolation: g + v*h + 0.5*a*h^2."""
         history = self.gradient_history.get(name)
         if not history or len(history) < 3:
@@ -253,23 +236,18 @@ class HybridGradientPredictor:
 
         return self._clamp_prediction(predicted, g_t)
 
-    def _predict_anchor(
-        self,
-        name: str,
-        horizon: int,
-        damping: float
-    ) -> Optional[torch.Tensor]:
+    def _predict_anchor(self, name: str, horizon: int, damping: float) -> torch.Tensor | None:
         """Weighted average of recent gradients (conservative anchor)."""
         history = self.gradient_history.get(name)
         if not history:
             return None
 
         # Exponentially weighted mean of history
-        weights = [0.95 ** i for i in range(len(history))]
+        weights = [0.95**i for i in range(len(history))]
         weights = weights[::-1]  # Recent gets more weight
         total_weight = sum(weights)
 
-        predicted = sum(w * g for w, g in zip(weights, history)) / total_weight
+        predicted = sum(w * g for w, g in zip(weights, history, strict=False)) / total_weight
 
         # Slight adjustment toward most recent
         g_t = history[-1]
@@ -278,10 +256,7 @@ class HybridGradientPredictor:
         return self._clamp_prediction(predicted, g_t)
 
     def _clamp_prediction(
-        self,
-        predicted: torch.Tensor,
-        reference: torch.Tensor,
-        max_ratio: float = 3.0
+        self, predicted: torch.Tensor, reference: torch.Tensor, max_ratio: float = 3.0
     ) -> torch.Tensor:
         """Clamp prediction magnitude to prevent explosion."""
         ref_norm = reference.norm().item()
@@ -292,7 +267,9 @@ class HybridGradientPredictor:
 
         return predicted
 
-    def predict(self, horizon: int = 1, device: Optional[torch.device] = None) -> dict[str, torch.Tensor]:
+    def predict(
+        self, horizon: int = 1, device: torch.device | None = None
+    ) -> dict[str, torch.Tensor]:
         """Generate hybrid prediction combining all methods.
 
         Args:
@@ -382,7 +359,7 @@ class HybridGradientPredictor:
 
         # Method 3: Median trend (robust to outliers)
         if len(recent) >= 4:
-            trends = [recent[i+1] - recent[i] for i in range(len(recent)-1)]
+            trends = [recent[i + 1] - recent[i] for i in range(len(recent) - 1)]
             median_trend = statistics.median(trends)
             median_pred = current_loss + median_trend * horizon * 0.5
         else:
@@ -394,10 +371,10 @@ class HybridGradientPredictor:
         trend_weight = 0.3 + 0.4 * self.confidence
 
         hybrid_pred = (
-            trend_weight * 0.5 * linear_pred +
-            trend_weight * 0.3 * median_pred +
-            (1 - trend_weight) * current_loss +
-            trend_weight * 0.2 * ema_pred
+            trend_weight * 0.5 * linear_pred
+            + trend_weight * 0.3 * median_pred
+            + (1 - trend_weight) * current_loss
+            + trend_weight * 0.2 * ema_pred
         )
 
         # Clamp to reasonable range
@@ -431,9 +408,9 @@ class HybridGradientPredictor:
             signals.append(stability_confidence)
 
         # Signal 4: History length (more history = more confident)
-        min_history = min(
-            len(h) for h in self.gradient_history.values()
-        ) if self.gradient_history else 0
+        min_history = (
+            min(len(h) for h in self.gradient_history.values()) if self.gradient_history else 0
+        )
         history_confidence = min(min_history / self.history_length, 1.0)
         signals.append(history_confidence)
 
@@ -470,17 +447,14 @@ class HybridGradientPredictor:
 
 
 def compute_dynamic_horizon(
-    base_horizon: int,
-    confidence: float,
-    min_horizon: int = 1,
-    max_horizon: int = 30
+    base_horizon: int, confidence: float, min_horizon: int = 1, max_horizon: int = 30
 ) -> int:
     """Compute dynamic prediction horizon based on confidence.
 
     Higher confidence allows longer prediction horizons.
     Uses confidence^1.5 to penalize low confidence more heavily.
     """
-    scale = confidence ** 1.5
+    scale = confidence**1.5
     horizon = int(base_horizon * scale)
     return max(min_horizon, min(horizon, max_horizon))
 
@@ -490,7 +464,7 @@ def compute_adaptive_lr_scale(
     confidence: float,
     recent_bias: float,
     min_scale: float = 0.3,
-    max_scale: float = 1.0
+    max_scale: float = 1.0,
 ) -> float:
     """Compute learning rate scale for prediction phase.
 
@@ -519,7 +493,7 @@ def compute_correction_steps(
     prediction_horizon: int,
     min_steps: int = 3,
     max_steps: int = 25,
-    error_multiplier: float = 15.0
+    error_multiplier: float = 15.0,
 ) -> int:
     """Compute number of correction steps based on prediction error.
 
@@ -546,8 +520,10 @@ if __name__ == "__main__":
             pred = predictor.predict(horizon=4)
             pred_loss = predictor.predict_loss(10.0 - i * 0.3, horizon=4)
 
-            print(f"Step {i}: confidence={predictor.confidence:.3f}, "
-                  f"weights={predictor.get_method_weights()}")
+            print(
+                f"Step {i}: confidence={predictor.confidence:.3f}, "
+                f"weights={predictor.get_method_weights()}"
+            )
 
     print("\nFinal method errors:", predictor.get_method_errors())
     print("Final confidence:", predictor.confidence)

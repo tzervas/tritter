@@ -51,7 +51,7 @@ def temp_code_dir(tmp_path):
 
     # Create Rust file
     rs_file = tmp_path / "sample.rs"
-    rs_file.write_text("fn main() {\n    println!(\"Hello, world!\");\n}\n")
+    rs_file.write_text('fn main() {\n    println!("Hello, world!");\n}\n')
 
     # Create text file
     txt_file = tmp_path / "sample.txt"

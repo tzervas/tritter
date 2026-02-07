@@ -49,7 +49,7 @@ import sys
 from collections.abc import Iterable, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from itertools import repeat
 from pathlib import Path
 from typing import TypeVar
@@ -96,7 +96,7 @@ def progress_bar(  # noqa: UP047 - TypeVar preferred over PEP 695 for 3.11 compa
             yield item
 
 
-class SampleStatus(str, Enum):
+class SampleStatus(StrEnum):
     """Status codes for processed samples.
 
     Why: Explicit enum values prevent fragile string matching and make

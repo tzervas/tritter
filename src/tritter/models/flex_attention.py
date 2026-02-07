@@ -57,13 +57,13 @@ if HAS_FLEX_ATTENTION:
     except ImportError:
         # PyTorch 2.5+ but flex_attention not available (e.g., CPU-only build)
         HAS_FLEX_ATTENTION = False
-        BlockMask = None  # type: ignore
-        create_block_mask = None  # type: ignore
-        flex_attention = None  # type: ignore
+        BlockMask = None
+        create_block_mask = None
+        flex_attention = None
 else:
-    BlockMask = None  # type: ignore
-    create_block_mask = None  # type: ignore
-    flex_attention = None  # type: ignore
+    BlockMask = None
+    create_block_mask = None
+    flex_attention = None
 
 
 _BLOCK_MASK_CACHE: "OrderedDict[tuple, BlockMask | None]" = OrderedDict()
@@ -157,8 +157,7 @@ def create_attention_mask(
     valid_modes = {"causal", "bidirectional", "prefix_lm", "embedding"}
     if config.attention_mode not in valid_modes:
         raise ValueError(
-            f"Invalid attention_mode: {config.attention_mode!r}. "
-            f"Must be one of {valid_modes}"
+            f"Invalid attention_mode: {config.attention_mode!r}. Must be one of {valid_modes}"
         )
 
     # Bidirectional mode: full attention, no mask needed
@@ -316,7 +315,7 @@ def create_attention_mask(
     return block_mask
 
 
-class FlexAttentionLayer(nn.Module):
+class FlexAttentionLayer(nn.Module):  # type: ignore[misc]
     """FlexAttention wrapper with automatic fallback to SDPA.
 
     Provides a unified interface for attention computation that uses FlexAttention

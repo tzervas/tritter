@@ -104,7 +104,12 @@ class PretrainDataset(IterableDataset):
 
                     # Determine modality from language field
                     language = item.get("language", "python")
-                    modality = ModalityType.CODE if language in ("python", "rust", "javascript", "typescript", "go", "java", "c", "cpp") else ModalityType.TEXT
+                    modality = (
+                        ModalityType.CODE
+                        if language
+                        in ("python", "rust", "javascript", "typescript", "go", "java", "c", "cpp")
+                        else ModalityType.TEXT
+                    )
 
                     tokens = self.tokenizer.encode(text, modality=modality, language=language)
 
@@ -152,7 +157,9 @@ def create_training_config(
 
     # Calculate steps
     total_steps = max(1, total_tokens // effective_batch_tokens)
-    warmup_steps = min(warmup_tokens // effective_batch_tokens, total_steps // 10)  # Cap warmup at 10% of total
+    warmup_steps = min(
+        warmup_tokens // effective_batch_tokens, total_steps // 10
+    )  # Cap warmup at 10% of total
 
     # Learning rate based on model size
     # Handle various size formats: "1B", "125M", "test"
@@ -244,19 +251,21 @@ def main():
     if profile is None:
         print("Warning: Unknown GPU, using conservative settings")
         from tritter.utils.hardware_profiles import RTX_5080
+
         profile = RTX_5080
 
-    print(f"\n{'='*60}")
-    print(f"Tritter Pretraining")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print("Tritter Pretraining")
+    print(f"{'=' * 60}")
     print(f"Model size:    {args.model}")
     print(f"Hardware:      {profile.name} ({profile.vram_gb:.0f}GB)")
     print(f"Data dir:      {args.data_dir}")
     print(f"Total tokens:  {args.total_tokens:,}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Check memory fit
     from tritter.core.model_specs import get_model_spec
+
     spec = get_model_spec(args.model)
     if spec is None:
         print(f"Error: Unknown model size '{args.model}'")
@@ -283,9 +292,7 @@ def main():
     print(f"BitNet:        {'Enabled' if use_bitnet else 'Disabled'}")
 
     # Create training config
-    train_config = create_training_config(
-        args.model, profile, total_tokens=args.total_tokens
-    )
+    train_config = create_training_config(args.model, profile, total_tokens=args.total_tokens)
 
     # BitNet-specific training adjustments
     # Why: BitNet's STE (straight-through estimator) requires:
@@ -332,6 +339,7 @@ def main():
 
     # Create tokenizer
     from tritter.tokenization import MultiModalTokenizer
+
     tokenizer = MultiModalTokenizer()
 
     # Create dataset
@@ -369,7 +377,7 @@ def main():
     model_dir.mkdir(parents=True, exist_ok=True)
 
     # Train
-    print(f"\nStarting training...")
+    print("\nStarting training...")
     print(f"Checkpoints will be saved to: {model_dir}")
     print()
 

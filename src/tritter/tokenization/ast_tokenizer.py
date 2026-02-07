@@ -29,9 +29,9 @@ try:
     TREE_SITTER_AVAILABLE = True
 except ImportError:
     TREE_SITTER_AVAILABLE = False
-    Language = Any  # type: ignore
-    Parser = Any  # type: ignore
-    Node = Any  # type: ignore
+    Language = Any
+    Parser = Any
+    Node = Any
 
 
 class CodeLanguage(Enum):

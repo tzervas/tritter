@@ -43,7 +43,7 @@ class TransferEngine:
 
         # Create dedicated stream for H2D transfers
         # Why: Separate stream allows transfers to overlap with compute on default stream
-        self._transfer_stream = torch.cuda.Stream(device=self.device)  # type: ignore[no-untyped-call]
+        self._transfer_stream = torch.cuda.Stream(device=self.device)
 
         # Pending transfers for sync
         self._pending_transfers: list[torch.cuda.Event] = []
@@ -88,8 +88,8 @@ class TransferEngine:
                 result = src.to(self.device, non_blocking=non_blocking)
 
             # Record event for synchronization
-            event = torch.cuda.Event()  # type: ignore[no-untyped-call]
-            event.record(self._transfer_stream)  # type: ignore[no-untyped-call]
+            event = torch.cuda.Event()
+            event.record(self._transfer_stream)
             self._pending_transfers.append(event)
 
         return result

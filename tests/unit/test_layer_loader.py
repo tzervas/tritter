@@ -34,9 +34,7 @@ class MockLayer(nn.Module):
         super().__init__()
         self.linear = nn.Linear(hidden_size, hidden_size)
 
-    def forward(
-        self, x: torch.Tensor, attention_mask: torch.Tensor | None = None
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, attention_mask: torch.Tensor | None = None) -> torch.Tensor:
         """Forward pass through linear layer.
 
         Args:

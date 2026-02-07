@@ -106,7 +106,7 @@ class VQVAEConfig:
         return self.image_size // self.patch_size
 
 
-class ResidualBlock2D(nn.Module):
+class ResidualBlock2D(nn.Module):  # type: ignore[misc]
     """Residual block with 2D convolutions for image processing.
 
     Why: Residual connections enable deep networks without vanishing gradients.
@@ -159,7 +159,7 @@ class ResidualBlock2D(nn.Module):
         return x + residual
 
 
-class VQVAEEncoder(nn.Module):
+class VQVAEEncoder(nn.Module):  # type: ignore[misc]
     """2D convolutional encoder for images.
 
     Why: Converts RGB images to continuous latent embeddings via progressive
@@ -214,10 +214,12 @@ class VQVAEEncoder(nn.Module):
             channels = out_channels
 
         # Additional residual blocks at final resolution
-        self.residual_blocks = nn.ModuleList([
-            ResidualBlock2D(channels)
-            for _ in range(config.num_layers - min(num_downsamples, config.num_layers))
-        ])
+        self.residual_blocks = nn.ModuleList(
+            [
+                ResidualBlock2D(channels)
+                for _ in range(config.num_layers - min(num_downsamples, config.num_layers))
+            ]
+        )
 
         # Final projection to hidden_size
         self.output_conv = nn.Conv2d(channels, config.hidden_size, kernel_size=1)
@@ -253,7 +255,7 @@ class VQVAEEncoder(nn.Module):
         return embeddings
 
 
-class VQVAEDecoder(nn.Module):
+class VQVAEDecoder(nn.Module):  # type: ignore[misc]
     """2D convolutional decoder for image reconstruction.
 
     Why: Mirror of encoder, reconstructs images from latent embeddings.
@@ -288,17 +290,19 @@ class VQVAEDecoder(nn.Module):
         self.input_conv = nn.Conv2d(config.hidden_size, config.hidden_size, kernel_size=1)
 
         # Residual blocks at latent resolution
-        self.residual_blocks = nn.ModuleList([
-            ResidualBlock2D(config.hidden_size)
-            for _ in range(config.num_layers - min(num_upsamples, config.num_layers))
-        ])
+        self.residual_blocks = nn.ModuleList(
+            [
+                ResidualBlock2D(config.hidden_size)
+                for _ in range(config.num_layers - min(num_upsamples, config.num_layers))
+            ]
+        )
 
         # Decoder blocks with progressive upsampling
         self.decoder_blocks = nn.ModuleList()
         channels = config.hidden_size
 
         for _ in range(min(num_upsamples, config.num_layers)):
-            out_channels = max(channels // 2, config.hidden_size // (2 ** config.num_layers))
+            out_channels = max(channels // 2, config.hidden_size // (2**config.num_layers))
             block = nn.Sequential(
                 ResidualBlock2D(channels),
                 nn.ConvTranspose2d(channels, out_channels, kernel_size=4, stride=2, padding=1),
@@ -338,7 +342,7 @@ class VQVAEDecoder(nn.Module):
         return images
 
 
-class VectorQuantizer(nn.Module):
+class VectorQuantizer(nn.Module):  # type: ignore[misc]
     """Vector quantizer for discrete image tokenization.
 
     Why: VQ enables discrete representation of continuous embeddings. Unlike RVQ
@@ -470,24 +474,16 @@ class VectorQuantizer(nn.Module):
 
         # Update cluster sizes
         cluster_size = one_hot.sum(0)  # (K,)
-        self.ema_cluster_size.data.mul_(self.ema_decay).add_(
-            cluster_size, alpha=1 - self.ema_decay
-        )
+        self.ema_cluster_size.data.mul_(self.ema_decay).add_(cluster_size, alpha=1 - self.ema_decay)
 
         # Update embedding sums
         embed_sum = one_hot.t() @ flat_z  # (K, C)
-        self.ema_embed_sum.data.mul_(self.ema_decay).add_(
-            embed_sum, alpha=1 - self.ema_decay
-        )
+        self.ema_embed_sum.data.mul_(self.ema_decay).add_(embed_sum, alpha=1 - self.ema_decay)
 
         # Update codebook (Laplace smoothing to avoid division by zero)
         n = self.ema_cluster_size.sum()
-        cluster_size_smoothed = (
-            (self.ema_cluster_size + 1e-5) / (n + self.codebook_size * 1e-5) * n
-        )
-        self.codebook.weight.data.copy_(
-            self.ema_embed_sum / cluster_size_smoothed.unsqueeze(1)
-        )
+        cluster_size_smoothed = (self.ema_cluster_size + 1e-5) / (n + self.codebook_size * 1e-5) * n
+        self.codebook.weight.data.copy_(self.ema_embed_sum / cluster_size_smoothed.unsqueeze(1))
 
     def dequantize(self, codes: Tensor) -> Tensor:
         """Convert discrete codes back to continuous embeddings.
@@ -532,10 +528,10 @@ class VectorQuantizer(nn.Module):
         """
         flat_codes = codes.view(-1)
         unique_codes = torch.unique(flat_codes).numel()
-        return unique_codes / self.codebook_size
+        return unique_codes / self.codebook_size  # type: ignore[no-any-return]
 
 
-class VQVAEImageTokenizer(nn.Module):
+class VQVAEImageTokenizer(nn.Module):  # type: ignore[misc]
     """Complete VQ-VAE image tokenizer combining encoder, VQ, and decoder.
 
     Why: Main interface for image tokenization. Combines convolutional encoder
@@ -692,7 +688,9 @@ class VQVAEImageTokenizer(nn.Module):
         tokens = codes.flatten().tolist()
         return [int(t) for t in tokens]
 
-    def detokenize(self, tokens: list[int], height: int | None = None, width: int | None = None) -> Tensor:
+    def detokenize(
+        self, tokens: list[int], height: int | None = None, width: int | None = None
+    ) -> Tensor:
         """Convert flat token sequence back to spatial codes.
 
         Args:
@@ -750,10 +748,10 @@ class VQVAEImageTokenizer(nn.Module):
         """
         total_params = sum(p.numel() for p in self.parameters())
         # Assume FP32 (4 bytes per param)
-        return total_params * 4 / 1e9
+        return total_params * 4 / 1e9  # type: ignore[no-any-return]
 
 
-class ImageProjection(nn.Module):
+class ImageProjection(nn.Module):  # type: ignore[misc]
     """Project VQ-VAE embeddings to model embedding space.
 
     Why: VQ-VAE hidden_size (256) may differ from model hidden_size (e.g., 2048).

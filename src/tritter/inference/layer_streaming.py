@@ -296,7 +296,7 @@ class StreamingInferenceEngine:
         # KV-cache placeholder (for future KV-cache implementation)
         self._kv_cache = None
 
-    @torch.inference_mode()
+    @torch.inference_mode()  # type: ignore[untyped-decorator]
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -349,7 +349,7 @@ class StreamingInferenceEngine:
 
         return hidden_states
 
-    @torch.inference_mode()
+    @torch.inference_mode()  # type: ignore[untyped-decorator]
     def generate(
         self,
         input_ids: torch.Tensor,

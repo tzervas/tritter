@@ -435,13 +435,13 @@ class TestEmbeddingPrediction:
 
         loss_dict = model.embedding_prediction_loss(input_ids, labels, alpha=0.0)
 
-        assert 'loss' in loss_dict
-        assert 'token_loss' in loss_dict
-        assert 'embedding_loss' in loss_dict
-        assert 'alpha' in loss_dict
+        assert "loss" in loss_dict
+        assert "token_loss" in loss_dict
+        assert "embedding_loss" in loss_dict
+        assert "alpha" in loss_dict
 
         # With alpha=0, combined loss should equal token loss
-        assert torch.allclose(loss_dict['loss'], loss_dict['token_loss'])
+        assert torch.allclose(loss_dict["loss"], loss_dict["token_loss"])
 
     def test_embedding_prediction_loss_pure_embedding(self) -> None:
         """Verify embedding_prediction_loss with alpha=1 (pure embedding loss).
@@ -464,7 +464,7 @@ class TestEmbeddingPrediction:
         loss_dict = model.embedding_prediction_loss(input_ids, labels, alpha=1.0)
 
         # With alpha=1, combined loss should equal embedding loss
-        assert torch.allclose(loss_dict['loss'], loss_dict['embedding_loss'])
+        assert torch.allclose(loss_dict["loss"], loss_dict["embedding_loss"])
 
     def test_embedding_prediction_loss_hybrid(self) -> None:
         """Verify embedding_prediction_loss with hybrid alpha.
@@ -488,8 +488,8 @@ class TestEmbeddingPrediction:
         loss_dict = model.embedding_prediction_loss(input_ids, labels, alpha=alpha)
 
         # Hybrid loss should be weighted combination
-        expected_loss = (1 - alpha) * loss_dict['token_loss'] + alpha * loss_dict['embedding_loss']
-        assert torch.allclose(loss_dict['loss'], expected_loss)
+        expected_loss = (1 - alpha) * loss_dict["token_loss"] + alpha * loss_dict["embedding_loss"]
+        assert torch.allclose(loss_dict["loss"], expected_loss)
 
     def test_embedding_gradients_flow(self) -> None:
         """Verify gradients flow correctly in embedding prediction mode.
@@ -510,7 +510,7 @@ class TestEmbeddingPrediction:
         labels = torch.randint(0, config.vocab_size, (2, 8))
 
         loss_dict = model.embedding_prediction_loss(input_ids, labels, alpha=1.0)
-        loss_dict['loss'].backward()
+        loss_dict["loss"].backward()
 
         # Verify gradients exist on model parameters
         has_grads = False

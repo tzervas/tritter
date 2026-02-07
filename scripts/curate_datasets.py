@@ -20,13 +20,14 @@ import argparse
 import hashlib
 import json
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 # Import quality gates - these integrate security and quality analysis
 try:
-    from security_scanner import SecurityScanner, ScanResult
-    from quality_analyzer import QualityAnalyzer, QualityResult
+    from quality_analyzer import QualityAnalyzer
+    from security_scanner import SecurityScanner
+
     QUALITY_GATES_AVAILABLE = True
 except ImportError:
     QUALITY_GATES_AVAILABLE = False
@@ -264,9 +265,7 @@ def process_sample(
 
         # Label security-vulnerable code as negative examples
         if scan_result.security_issues:
-            result["security_issues"] = [
-                issue.issue_type for issue in scan_result.security_issues
-            ]
+            result["security_issues"] = [issue.issue_type for issue in scan_result.security_issues]
             if scan_result.quality_label == "negative":
                 result["quality_label"] = "negative"
                 explanations = [

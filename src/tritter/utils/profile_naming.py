@@ -8,14 +8,14 @@ and reporting.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable, Mapping
 import importlib.util
 import os
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from typing import Any
 
 from tritter.core.config import TritterConfig
-from tritter.core.model_specs import estimate_memory, get_model_spec
-
+from tritter.core.model_specs import MemoryEstimate, ModelSpec, estimate_memory, get_model_spec
 
 _VALID_TRAINING_MODES = {"pretrain", "finetune", "lora", "qlora", "inference"}
 
@@ -306,8 +306,8 @@ def format_profile_name(metadata: ProfileNamingMetadata) -> str:
 
 
 def _estimate_loaded_vram_gb(
-    spec: object,
-    memory: object,
+    spec: ModelSpec,
+    memory: MemoryEstimate,
     training_mode: str,
     use_amp: bool,
     quantization: str,
@@ -365,18 +365,16 @@ def _apply_tag_overrides(
     Why: Users may want to override specific tags without redefining the full
     naming payload.
     """
-    data = metadata.to_dict()
+    data: dict[str, Any] = dict(metadata.to_dict())
     for key, value in overrides.items():
         if key in data:
             data[key] = value
 
-    accel_features = data.get("accel_features")
-    if isinstance(accel_features, list):
-        accel_features = tuple(str(feature) for feature in accel_features)
-    elif isinstance(accel_features, tuple):
-        accel_features = tuple(str(feature) for feature in accel_features)
+    accel_features_raw = data.get("accel_features")
+    if isinstance(accel_features_raw, (list, tuple)):
+        resolved_features = tuple(str(feature) for feature in accel_features_raw)
     else:
-        accel_features = tuple(metadata.accel_features)
+        resolved_features = tuple(metadata.accel_features)
 
     return ProfileNamingMetadata(
         model_size=str(data.get("model_size", metadata.model_size)),
@@ -393,11 +391,9 @@ def _apply_tag_overrides(
         optimizer=str(data.get("optimizer", metadata.optimizer)),
         vsa_mode=str(data.get("vsa_mode", metadata.vsa_mode)),
         accel_profile=str(data.get("accel_profile", metadata.accel_profile)),
-        accel_features=accel_features,
+        accel_features=resolved_features,
         vram_raw_gb=_coerce_optional_float(data.get("vram_raw_gb", metadata.vram_raw_gb)),
-        vram_loaded_gb=_coerce_optional_float(
-            data.get("vram_loaded_gb", metadata.vram_loaded_gb)
-        ),
+        vram_loaded_gb=_coerce_optional_float(data.get("vram_loaded_gb", metadata.vram_loaded_gb)),
     )
 
 
@@ -468,7 +464,7 @@ def _format_context(context_length: int) -> str:
     return str(context_length)
 
 
-def _estimate_kv_cache_bytes(spec: object, context_length: int, kv_cache: str) -> int:
+def _estimate_kv_cache_bytes(spec: ModelSpec, context_length: int, kv_cache: str) -> int:
     """Estimate KV-cache bytes for the requested context length.
 
     Args:

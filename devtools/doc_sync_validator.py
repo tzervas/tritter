@@ -110,9 +110,7 @@ def check_roadmap_status(root: Path, result: ValidationResult) -> None:
 
     # Check for common inconsistencies
     # Look for "✅ Implemented" claims and verify files exist
-    implemented_pattern = re.compile(
-        r"\|\s*`?([^`|]+)`?\s*\|\s*`([^`]+)`\s*\|\s*✅\s*Implemented"
-    )
+    implemented_pattern = re.compile(r"\|\s*`?([^`|]+)`?\s*\|\s*`([^`]+)`\s*\|\s*✅\s*Implemented")
 
     for match in implemented_pattern.finditer(content):
         feature = match.group(1).strip()
@@ -127,7 +125,7 @@ def check_roadmap_status(root: Path, result: ValidationResult) -> None:
                 result.add_error(
                     str(roadmap_path),
                     f"Claims '{feature}' implemented at '{location}' but file not found",
-                    suggestion=f"Check path or update status",
+                    suggestion="Check path or update status",
                 )
 
 
@@ -173,9 +171,7 @@ def check_claude_md_accuracy(root: Path, result: ValidationResult) -> None:
     content = claude_md.read_text()
 
     # Check claimed implementations exist
-    implemented_claims = re.findall(
-        r"\|\s*(.+?)\s*\|\s*`([^`]+)`\s*\|\s*✅\s*Implemented", content
-    )
+    implemented_claims = re.findall(r"\|\s*(.+?)\s*\|\s*`([^`]+)`\s*\|\s*✅\s*Implemented", content)
 
     for feature, location in implemented_claims:
         file_path = root / "src" / "tritter" / location
@@ -232,7 +228,7 @@ def check_spec_status(root: Path, result: ValidationResult) -> None:
                 if not has_test:
                     result.add_warning(
                         str(spec_file.relative_to(root)),
-                        f"Spec claims implemented but no obvious test file found",
+                        "Spec claims implemented but no obvious test file found",
                         suggestion=f"Expected test file like test_{feature_name.replace('-', '_')}.py",
                     )
 
@@ -246,9 +242,7 @@ def check_hardware_profiles(root: Path, result: ValidationResult) -> None:
     content = profiles_file.read_text()
 
     # Check that verified=True profiles have matching tests
-    verified_pattern = re.compile(
-        r"(\w+)\s*=\s*HardwareProfile\([^)]*verified\s*=\s*True"
-    )
+    verified_pattern = re.compile(r"(\w+)\s*=\s*HardwareProfile\([^)]*verified\s*=\s*True")
 
     for match in verified_pattern.finditer(content):
         profile_name = match.group(1)
@@ -304,9 +298,7 @@ def print_result(result: ValidationResult) -> None:
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Validate documentation sync with code"
-    )
+    parser = argparse.ArgumentParser(description="Validate documentation sync with code")
     parser.add_argument(
         "--strict",
         action="store_true",

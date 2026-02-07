@@ -19,16 +19,12 @@ Reference: docs/TRITON_EXTRACTION_PLAN.md, docs/specs/SPEC-007-dataset-quality-g
 import argparse
 import hashlib
 import json
-import os
-import re
 import shutil
 import subprocess
-import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -340,13 +336,9 @@ class TritonExtractor:
 
         return {
             "has_triton_jit": "@triton.jit" in content,
-            "has_bounds_masking": any(
-                p in content for p in ["tl.where", "mask=", "masked_load"]
-            ),
+            "has_bounds_masking": any(p in content for p in ["tl.where", "mask=", "masked_load"]),
             "has_program_id": "tl.program_id" in content,
-            "has_block_size": any(
-                p in content for p in ["BLOCK_SIZE", "block_", "BLOCK_"]
-            ),
+            "has_block_size": any(p in content for p in ["BLOCK_SIZE", "block_", "BLOCK_"]),
             "has_load_store": "tl.load" in content or "tl.store" in content,
             "has_docstring": '"""' in content or "'''" in content,
             "has_license_header": any(

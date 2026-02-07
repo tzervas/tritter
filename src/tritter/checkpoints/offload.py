@@ -209,7 +209,7 @@ def list_remote_checkpoints(
 def get_remote_disk_usage(
     remote_host: str,
     remote_dir: str = "/data/tritter/checkpoints/",
-) -> dict[str, int | str]:
+) -> dict[str, int | float | str]:
     """Get disk usage statistics for remote checkpoint directory.
 
     Args:

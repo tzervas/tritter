@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 
 
-class BaseEmbedding(ABC, nn.Module):
+class BaseEmbedding(ABC, nn.Module):  # type: ignore[misc]
     """Abstract base class for embedding layers.
 
     Why: Defines the interface that all embedding strategies must implement.

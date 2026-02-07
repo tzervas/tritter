@@ -205,9 +205,7 @@ class TestValidationChecks:
             ('"""Docstring."""', "has_docstring", True),
         ],
     )
-    def test_validation_patterns(
-        self, content: str, check: str, expected: bool
-    ) -> None:
+    def test_validation_patterns(self, content: str, check: str, expected: bool) -> None:
         """Verify individual validation patterns.
 
         Why: Each validation check should correctly identify its pattern.

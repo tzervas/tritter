@@ -66,7 +66,7 @@ struct Point {
 
     print("\nFirst 15 tokens:")
     for i, token in enumerate(python_tokens[:15]):
-        print(f"  {i+1:2d}. {token.type.value:12s} | {token.text!r:20s}")
+        print(f"  {i + 1:2d}. {token.type.value:12s} | {token.text!r:20s}")
 
     # 2. AST tokenization for Rust
     print("\n2. AST Tokenizer (Rust)")
@@ -76,7 +76,7 @@ struct Point {
     print(f"Total tokens: {len(rust_tokens)}")
     print("\nFirst 15 tokens:")
     for i, token in enumerate(rust_tokens[:15]):
-        print(f"  {i+1:2d}. {token.type.value:12s} | {token.text!r:20s}")
+        print(f"  {i + 1:2d}. {token.type.value:12s} | {token.text!r:20s}")
 
     # 3. MultiModalTokenizer integration
     print("\n3. MultiModalTokenizer Integration")

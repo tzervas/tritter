@@ -15,7 +15,6 @@ tests are marked with pytest.mark.skipif for CI environments without CUDA.
 import tempfile
 from pathlib import Path
 
-import pytest
 import torch
 import torch.nn as nn
 

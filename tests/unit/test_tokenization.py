@@ -211,15 +211,13 @@ class TestMultiModalTokenizer:
 
             # The decoded text should match the original
             assert decoded == text, (
-                f"Round-trip failed for text: {text!r}\n"
-                f"Got: {decoded!r}\n"
-                f"Tokens: {tokens}"
+                f"Round-trip failed for text: {text!r}\nGot: {decoded!r}\nTokens: {tokens}"
             )
 
         # Test that complex/rare tokens at least encode/decode without errors
         # (may not round-trip perfectly due to modulo mapping collisions)
         complex_texts = [
-            "Special chars: @#$%^&*()_+-={}[]|\\:\";<>?,./",
+            'Special chars: @#$%^&*()_+-={}[]|\\:";<>?,./',
             "Multilingual: 你好世界 Привет мир",
             "def hello(): return 'world'",  # Contains rare tokens
         ]
@@ -255,8 +253,7 @@ class TestMultiModalTokenizer:
         # Content tokens should be >= 8 (outside special token range)
         content_tokens = tokens[2:-1]
         assert all(t >= 8 for t in content_tokens), (
-            f"Content tokens should be >= 8 to avoid special token collision. "
-            f"Got: {content_tokens}"
+            f"Content tokens should be >= 8 to avoid special token collision. Got: {content_tokens}"
         )
 
     def test_bpe_vocab_size_handling(self) -> None:
@@ -280,7 +277,7 @@ class TestMultiModalTokenizer:
 
         # BPE tokens should be in range [8, vocab_size-257]
         # Byte fallback is [vocab_size-256, vocab_size-1]
-        bpe_range_end = tokenizer.vocab_size - 256
+        tokenizer.vocab_size - 256
         for token in tokens:
             if token >= 8:  # Not a special token
                 assert token < tokenizer.vocab_size, (

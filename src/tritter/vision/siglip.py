@@ -73,7 +73,7 @@ class SigLIPConfig:
         return self.num_patches + 1
 
 
-class SigLIPEmbeddings(nn.Module):
+class SigLIPEmbeddings(nn.Module):  # type: ignore[misc]
     """Patch embedding for vision transformer.
 
     Why: Converts image into patch embeddings suitable for transformer processing.
@@ -110,9 +110,7 @@ class SigLIPEmbeddings(nn.Module):
         # Learnable position embeddings
         # Why: Vision transformers need position information since attention
         # is permutation-invariant. Learned embeddings capture 2D structure.
-        self.position_embedding = nn.Embedding(
-            config.num_positions, config.hidden_size
-        )
+        self.position_embedding = nn.Embedding(config.num_positions, config.hidden_size)
 
         # Register position IDs as buffer (not parameter)
         self.register_buffer(
@@ -156,7 +154,7 @@ class SigLIPEmbeddings(nn.Module):
         return embeddings  # (B, num_positions, hidden_size)
 
 
-class SigLIPAttention(nn.Module):
+class SigLIPAttention(nn.Module):  # type: ignore[misc]
     """Multi-head self-attention for vision transformer.
 
     Why: Standard transformer attention enables patches to attend to each other,
@@ -211,7 +209,7 @@ class SigLIPAttention(nn.Module):
         return self.out_proj(attn_output)
 
 
-class SigLIPMLP(nn.Module):
+class SigLIPMLP(nn.Module):  # type: ignore[misc]
     """Feed-forward network for vision transformer.
 
     Why: Standard transformer FFN with GELU activation for non-linear transformation.
@@ -238,7 +236,7 @@ class SigLIPMLP(nn.Module):
         return hidden_states
 
 
-class SigLIPEncoderLayer(nn.Module):
+class SigLIPEncoderLayer(nn.Module):  # type: ignore[misc]
     """Single vision transformer encoder layer.
 
     Why: Standard Pre-LN transformer block with attention and MLP.
@@ -276,7 +274,7 @@ class SigLIPEncoderLayer(nn.Module):
         return hidden_states
 
 
-class SigLIPEncoder(nn.Module):
+class SigLIPEncoder(nn.Module):  # type: ignore[misc]
     """Stack of vision transformer encoder layers.
 
     Why: Hierarchical feature extraction through stacked transformer layers.
@@ -285,9 +283,7 @@ class SigLIPEncoder(nn.Module):
     def __init__(self, config: SigLIPConfig) -> None:
         """Initialize encoder stack."""
         super().__init__()
-        self.layers = nn.ModuleList([
-            SigLIPEncoderLayer(config) for _ in range(config.num_layers)
-        ])
+        self.layers = nn.ModuleList([SigLIPEncoderLayer(config) for _ in range(config.num_layers)])
 
     def forward(self, hidden_states: Tensor) -> Tensor:
         """Forward pass through all encoder layers.
@@ -303,7 +299,7 @@ class SigLIPEncoder(nn.Module):
         return hidden_states
 
 
-class SigLIPVisionEncoder(nn.Module):
+class SigLIPVisionEncoder(nn.Module):  # type: ignore[misc]
     """Complete SigLIP vision encoder with projection to model embedding space.
 
     Why: Encapsulates the full vision pipeline from pixels to model-compatible
@@ -439,7 +435,7 @@ class SigLIPVisionEncoder(nn.Module):
         """
         total_params = sum(p.numel() for p in self.parameters())
         # Assume FP32 for non-quantized encoder (4 bytes per param)
-        return total_params * 4 / 1e9
+        return total_params * 4 / 1e9  # type: ignore[no-any-return]
 
 
 def create_siglip_encoder(

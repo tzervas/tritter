@@ -3,7 +3,7 @@ name = "tritter"
 version = "0.2.0"
 description = "Multimodal AI model with BitNet 1.58-bit quantization, 128K context, any-to-any (text/code/image/audio) fusion"
 readme = "README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.11,<3.14"
 license = {text = "MIT"}
 authors = [
     {name = "Tyler Zervas", email = "tz-dev@vectorweight.com"}

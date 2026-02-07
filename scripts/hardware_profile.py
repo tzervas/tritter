@@ -29,9 +29,7 @@ import torch
 
 def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Hardware profiling and configuration for Tritter"
-    )
+    parser = argparse.ArgumentParser(description="Hardware profiling and configuration for Tritter")
     parser.add_argument(
         "--gpu",
         type=str,

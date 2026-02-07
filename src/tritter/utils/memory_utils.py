@@ -20,9 +20,10 @@ import json
 import platform
 import subprocess
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Mapping
+from typing import Literal
 
 import torch
 
@@ -73,8 +74,11 @@ def detect_os_reserved_memory() -> tuple[float, str]:
         try:
             # Check number of monitors via PowerShell (rough estimate)
             result = subprocess.run(
-                ["powershell", "-Command",
-                 "(Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorID).Count"],
+                [
+                    "powershell",
+                    "-Command",
+                    "(Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorID).Count",
+                ],
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -381,32 +385,17 @@ def suggest_memory_reduction(
             f"budget ({budget:.1f}GB). Consider smaller model size."
         )
     elif gap > 5:
-        suggestions.append(
-            "Enable layer streaming: config.use_layer_streaming=True"
-        )
-        suggestions.append(
-            "Use LoRA for training instead of full fine-tuning"
-        )
+        suggestions.append("Enable layer streaming: config.use_layer_streaming=True")
+        suggestions.append("Use LoRA for training instead of full fine-tuning")
     elif gap > 1:
-        suggestions.append(
-            f"Reduce context length (current gap: {gap:.1f}GB)"
-        )
-        suggestions.append(
-            "Use INT4 KV-cache: reduces cache by 4x"
-        )
+        suggestions.append(f"Reduce context length (current gap: {gap:.1f}GB)")
+        suggestions.append("Use INT4 KV-cache: reduces cache by 4x")
     else:
-        suggestions.append(
-            "Close GPU-intensive desktop applications"
-        )
-        suggestions.append(
-            "Reduce batch size to 1"
-        )
+        suggestions.append("Close GPU-intensive desktop applications")
+        suggestions.append("Reduce batch size to 1")
 
     # Always suggest these
-    suggestions.append(
-        f"Current safe budget: {budget:.1f}GB "
-        f"(after OS reservation)"
-    )
+    suggestions.append(f"Current safe budget: {budget:.1f}GB (after OS reservation)")
 
     return suggestions
 

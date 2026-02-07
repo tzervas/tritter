@@ -7,12 +7,23 @@ using its corresponding key, avoiding collisions and tensor splitting errors.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 import torch
 
-from vsa_optimizer import hyperdimensional_bind, hyperdimensional_bundle
+try:
+    from vsa_optimizer import hyperdimensional_bind, hyperdimensional_bundle
+except ImportError:
+
+    def hyperdimensional_bind(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        """Fallback element-wise multiply binding when vsa_optimizer is not installed."""
+        return a * b
+
+    def hyperdimensional_bundle(tensors: list[torch.Tensor]) -> torch.Tensor:
+        """Fallback majority-vote bundling when vsa_optimizer is not installed."""
+        stacked = torch.stack(tensors)
+        return torch.sign(stacked.sum(dim=0))
 
 
 @dataclass

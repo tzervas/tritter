@@ -126,7 +126,7 @@ def unpack_ternary(
     return scaled
 
 
-class PackedTernaryWeight(nn.Module):
+class PackedTernaryWeight(nn.Module):  # type: ignore[misc]
     """Inference-only ternary layer with packed weight storage.
 
     Why: For inference, we don't need FP32 shadow weights (STE is training-only).
@@ -262,7 +262,7 @@ class PackedTernaryWeight(nn.Module):
         packed_bytes = self.packed_weight.numel() * 1  # uint8 = 1 byte
         scale_bytes = self.scale.numel() * 4  # FP32 = 4 bytes
         bias_bytes = self.bias.numel() * 4 if self.bias is not None else 0
-        return packed_bytes + scale_bytes + bias_bytes
+        return packed_bytes + scale_bytes + bias_bytes  # type: ignore[no-any-return]
 
 
 def convert_to_packed(model: nn.Module) -> nn.Module:

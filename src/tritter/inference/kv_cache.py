@@ -366,8 +366,8 @@ class INT4KVCache:
             # Why: For incremental updates, concatenate along seq dimension.
             # This requires unpacking, concatenating, and repacking, which
             # adds overhead. For production, consider ring buffer approach.
-            existing_k = self._dequantize_per_channel(self.keys[layer_idx])
-            existing_v = self._dequantize_per_token(self.values[layer_idx])
+            existing_k = self._dequantize_per_channel(self.keys[layer_idx])  # type: ignore[arg-type]
+            existing_v = self._dequantize_per_token(self.values[layer_idx])  # type: ignore[arg-type]
 
             combined_k = torch.cat([existing_k, key], dim=2)
             combined_v = torch.cat([existing_v, value], dim=2)
@@ -395,8 +395,8 @@ class INT4KVCache:
         if self.keys[layer_idx] is None or self.values[layer_idx] is None:
             raise ValueError(f"No cached values for layer {layer_idx}")
 
-        key = self._dequantize_per_channel(self.keys[layer_idx])
-        value = self._dequantize_per_token(self.values[layer_idx])
+        key = self._dequantize_per_channel(self.keys[layer_idx])  # type: ignore[arg-type]
+        value = self._dequantize_per_token(self.values[layer_idx])  # type: ignore[arg-type]
 
         return key, value
 
@@ -421,7 +421,7 @@ class INT4KVCache:
         """
         total_bytes = 0
 
-        for k, v in zip(self.keys, self.values):
+        for k, v in zip(self.keys, self.values, strict=False):
             if k is not None:
                 # Packed data + scales + zero_points
                 total_bytes += k.data.numel()  # uint8, 1 byte each
@@ -450,8 +450,8 @@ class INT4KVCache:
         for i in range(self.num_layers):
             if self.keys[i] is not None:
                 # Dequantize, slice, re-quantize
-                k = self._dequantize_per_channel(self.keys[i])
-                v = self._dequantize_per_token(self.values[i])
+                k = self._dequantize_per_channel(self.keys[i])  # type: ignore[arg-type]
+                v = self._dequantize_per_token(self.values[i])  # type: ignore[arg-type]
 
                 # Keep only last window_size positions
                 k = k[:, :, -window_size:, :]

@@ -48,9 +48,7 @@ def compare_architectures(tritter_config: dict, bitnet_config: dict) -> list[str
 
     for key in ["hidden_size", "num_layers", "num_heads", "head_dim"]:
         if key in tritter_config and tritter_config[key] != bitnet_config[key]:
-            differences.append(
-                f"{key}: Tritter={tritter_config[key]}, BitNet={bitnet_config[key]}"
-            )
+            differences.append(f"{key}: Tritter={tritter_config[key]}, BitNet={bitnet_config[key]}")
 
     return differences
 
@@ -62,6 +60,7 @@ def try_load_hf_model(model_id: str) -> dict | None:
     """
     try:
         from transformers import AutoConfig
+
         config = AutoConfig.from_pretrained(model_id)
         return {
             "hidden_size": config.hidden_size,
@@ -82,7 +81,6 @@ def check_weight_shapes(model_id: str) -> dict[str, tuple[int, ...]]:
     """
     try:
         from huggingface_hub import hf_hub_download
-        import safetensors.torch
 
         # Download index
         index_file = hf_hub_download(
@@ -90,6 +88,7 @@ def check_weight_shapes(model_id: str) -> dict[str, tuple[int, ...]]:
             "model.safetensors.index.json",
         )
         import json
+
         with open(index_file) as f:
             index = json.load(f)
 
@@ -187,6 +186,7 @@ def main():
     print("\nInstantiating TritterModel...")
     try:
         from tritter.models.architecture import TritterModel
+
         model = TritterModel(tritter_config)
 
         # Count parameters
@@ -214,6 +214,7 @@ def main():
     except Exception as e:
         print(f"ERROR instantiating model: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

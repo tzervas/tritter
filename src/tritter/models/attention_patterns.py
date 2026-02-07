@@ -200,7 +200,7 @@ def document_mask(doc_ids: torch.Tensor) -> Callable[[int, int, int, int], bool]
 
         # Only attend within same document
         # Return comparison result directly - FlexAttention handles both bool and tensor
-        return query_doc == key_doc  # type: ignore[return-value]
+        return query_doc == key_doc  # type: ignore[no-any-return]
 
     return _document_mask
 

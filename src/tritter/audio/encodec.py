@@ -96,7 +96,7 @@ class EnCodecConfig:
         return self.codebook_size * self.num_codebooks
 
 
-class ConvBlock(nn.Module):
+class ConvBlock(nn.Module):  # type: ignore[misc]
     """Convolutional block with normalization and activation.
 
     Why: Basic building block for encoder/decoder. Uses ELU activation which
@@ -170,7 +170,7 @@ class ConvBlock(nn.Module):
         return result
 
 
-class ResidualUnit(nn.Module):
+class ResidualUnit(nn.Module):  # type: ignore[misc]
     """Residual unit with dilated convolution for temporal modeling.
 
     Why: Residual connections enable deep networks without vanishing gradients.
@@ -213,7 +213,7 @@ class ResidualUnit(nn.Module):
         return x + residual
 
 
-class EncoderBlock(nn.Module):
+class EncoderBlock(nn.Module):  # type: ignore[misc]
     """Encoder block with residual units and downsampling.
 
     Why: Each encoder block processes audio at a specific resolution, then
@@ -266,7 +266,7 @@ class EncoderBlock(nn.Module):
         return x
 
 
-class DecoderBlock(nn.Module):
+class DecoderBlock(nn.Module):  # type: ignore[misc]
     """Decoder block with upsampling and residual units.
 
     Why: Mirror of encoder block for reconstruction. Upsamples first, then
@@ -319,7 +319,7 @@ class DecoderBlock(nn.Module):
         return x
 
 
-class EnCodecEncoder(nn.Module):
+class EnCodecEncoder(nn.Module):  # type: ignore[misc]
     """Convolutional encoder for audio waveforms.
 
     Why: Converts raw audio waveform to continuous embeddings via progressive
@@ -470,7 +470,7 @@ class EnCodecEncoder(nn.Module):
         return length
 
 
-class EnCodecDecoder(nn.Module):
+class EnCodecDecoder(nn.Module):  # type: ignore[misc]
     """Convolutional decoder for waveform reconstruction.
 
     Why: Mirror of encoder, reconstructs audio waveform from embeddings.
@@ -569,7 +569,7 @@ class EnCodecDecoder(nn.Module):
         return waveform
 
 
-class ResidualVectorQuantizer(nn.Module):
+class ResidualVectorQuantizer(nn.Module):  # type: ignore[misc]
     """Residual Vector Quantizer for audio compression.
 
     Why: RVQ enables high-fidelity discrete representation of continuous embeddings.
@@ -718,7 +718,7 @@ class ResidualVectorQuantizer(nn.Module):
         return usage
 
 
-class EnCodecAudioTokenizer(nn.Module):
+class EnCodecAudioTokenizer(nn.Module):  # type: ignore[misc]
     """Complete audio tokenizer combining encoder and RVQ.
 
     Why: Main interface for audio tokenization. Combines convolutional encoder
@@ -951,10 +951,10 @@ class EnCodecAudioTokenizer(nn.Module):
         """
         total_params = sum(p.numel() for p in self.parameters())
         # Assume FP32 (4 bytes per param)
-        return total_params * 4 / 1e9
+        return total_params * 4 / 1e9  # type: ignore[no-any-return]
 
 
-class AudioProjection(nn.Module):
+class AudioProjection(nn.Module):  # type: ignore[misc]
     """Project audio embeddings to model embedding space.
 
     Why: EnCodec hidden_size (128) differs from model hidden_size (e.g., 2048).

@@ -12,22 +12,21 @@ Why: Audio tokenizer is critical for multimodal capability. Tests verify:
 """
 
 import torch
-import pytest
 
-from tritter.core.config import TritterConfig
 from tritter.audio.encodec import (
-    EnCodecConfig,
-    EnCodecEncoder,
-    EnCodecDecoder,
-    ResidualVectorQuantizer,
-    EnCodecAudioTokenizer,
     AudioProjection,
-    create_audio_tokenizer,
     ConvBlock,
-    ResidualUnit,
-    EncoderBlock,
     DecoderBlock,
+    EnCodecAudioTokenizer,
+    EnCodecConfig,
+    EnCodecDecoder,
+    EnCodecEncoder,
+    EncoderBlock,
+    ResidualUnit,
+    ResidualVectorQuantizer,
+    create_audio_tokenizer,
 )
+from tritter.core.config import TritterConfig
 
 
 class TestEnCodecConfig:
@@ -372,7 +371,7 @@ class TestResidualVectorQuantizer:
         usage = quantizer.get_codebook_usage(codes)
 
         assert len(usage) == config.num_codebooks
-        for level, fraction in usage.items():
+        for _level, fraction in usage.items():
             assert 0 < fraction <= 1.0
 
 
@@ -690,7 +689,7 @@ class TestGradientFlow:
             assert param.grad is None
 
         # Quantizer codebook should have gradients
-        for param in tokenizer.quantizer.parameters():
+        for _param in tokenizer.quantizer.parameters():
             # Some codebook entries may have zero gradients if not used
             # Just verify the computation ran without error
             pass

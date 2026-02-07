@@ -71,7 +71,7 @@ class EmbeddingRounderConfig:
             self.vq_config = VQRouterConfig()
 
 
-class EmbeddingRounder(nn.Module):
+class EmbeddingRounder(nn.Module):  # type: ignore[misc]
     """Unified embedding rounding interface.
 
     Why: Provides a single API for converting continuous embeddings to discrete

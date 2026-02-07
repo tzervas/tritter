@@ -146,9 +146,7 @@ def print_model_summary(
     # Layer type breakdown
     print("Layer Type Distribution:")
     print("-" * 40)
-    for layer_type, count in sorted(
-        summary.layer_type_counts.items(), key=lambda x: -x[1]
-    ):
+    for layer_type, count in sorted(summary.layer_type_counts.items(), key=lambda x: -x[1]):
         print(f"  {layer_type:<25} {count:>5}")
     print()
 
@@ -160,11 +158,7 @@ def print_model_summary(
 
         sorted_layers = sorted(summary.layers, key=lambda x: -x.param_count)
         for layer in sorted_layers[:max_layers]:
-            name_display = (
-                layer.name[:47] + "..."
-                if len(layer.name) > 50
-                else layer.name
-            )
+            name_display = layer.name[:47] + "..." if len(layer.name) > 50 else layer.name
             params_str = f"{layer.param_count:,}"
             print(f"{name_display:<50} {layer.module_type:<15} {params_str:>12}")
 
@@ -388,6 +382,7 @@ def validate_checkpoint(path: str | Path) -> dict[str, Any]:
         results["info"]["format"] = "safetensors"
         try:
             import safetensors.torch as st
+
             tensors = st.load_file(str(path))
             results["info"]["tensor_count"] = len(tensors)
             results["info"]["total_params"] = sum(t.numel() for t in tensors.values())
@@ -497,6 +492,7 @@ def main() -> int:
         try:
             sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
             from tritter import TritterConfig, TritterModel
+
             config = TritterConfig(model_size=args.model)
             model = TritterModel(config)
             print_model_summary(model, f"Tritter-{args.model}")
