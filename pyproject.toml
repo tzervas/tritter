@@ -62,7 +62,8 @@ inference = [
 
 training = [
     "nanotron>=0.3.0",
-    "vsa-training-optimizer>=0.1.0",  # VSA/ternary gradient optimization
+    # Note: vsa-training-optimizer is not yet published to PyPI
+    # Training optimizations are implemented in-tree (tritter.training.optimization)
 ]
 
 curation = [

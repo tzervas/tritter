@@ -1,27 +1,35 @@
 name: Progressive CI Quality Gates
 
+# Manual trigger only - run checks locally first
+# Cost optimization: use local checks (bash .github/scripts/run-ci.sh)
+# CI provides verification before critical merges
 on:
-  push:
-    branches:
-      - main
-      - master
-      - develop
-      - development
-      - release/**
-      - feature/**
-      - fix/**
-      - claude/**
-  pull_request:
-    branches:
-      - main
-      - master
-      - develop
-      - development
-      - release/**
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to run CI on (defaults to current)'
+        required: false
+        type: string
+      strictness_override:
+        description: 'Override strictness level (0-3, leave empty for auto-detect)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - '0'
+          - '1'
+          - '2'
+          - '3'
 
 env:
   PYTHON_VERSION: "3.12"
   CI_CONFIG_FILE: ".github/ci-config.yml"
+
+# Minimal permissions - security best practice
+permissions:
+  contents: read
+  pull-requests: write  # For PR comments only
+  issues: write  # For issue comments only
 
 jobs:
   progressive-quality-gate:
@@ -59,13 +67,29 @@ jobs:
       - name: Detect branch strictness level
         id: strictness
         run: |
-          eval "$(bash .github/scripts/detect-branch-strictness.sh)"
-          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-          echo "level=$STRICTNESS_LEVEL" >> $GITHUB_OUTPUT
-          echo "name=$STRICTNESS_NAME" >> $GITHUB_OUTPUT
-          echo "### Progressive CI Configuration" >> $GITHUB_STEP_SUMMARY
+          # Use override if provided, otherwise auto-detect
+          if [[ -n "${{ github.event.inputs.strictness_override }}" ]]; then
+            export STRICTNESS_LEVEL="${{ github.event.inputs.strictness_override }}"
+            export BRANCH="${{ github.event.inputs.branch || github.ref_name }}"
+            case "$STRICTNESS_LEVEL" in
+              0) export STRICTNESS_NAME="FEATURE" ;;
+              1) export STRICTNESS_NAME="DEVELOPMENT" ;;
+              2) export STRICTNESS_NAME="RELEASE" ;;
+              3) export STRICTNESS_NAME="PRODUCTION" ;;
+            esac
+            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+            echo "level=$STRICTNESS_LEVEL" >> $GITHUB_OUTPUT
+            echo "name=$STRICTNESS_NAME" >> $GITHUB_OUTPUT
+          else
+            eval "$(bash .github/scripts/detect-branch-strictness.sh)"
+            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+            echo "level=$STRICTNESS_LEVEL" >> $GITHUB_OUTPUT
+            echo "name=$STRICTNESS_NAME" >> $GITHUB_OUTPUT
+          fi
+          echo "### Progressive CI Configuration (Manual Trigger)" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch**: \`$BRANCH\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Strictness Level**: $STRICTNESS_LEVEL ($STRICTNESS_NAME)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Note**: CI is manual-only. Run \`bash scripts/run-checks-local.sh\` locally first." >> $GITHUB_STEP_SUMMARY
 
       - name: Run progressive CI checks
         run: |
