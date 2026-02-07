@@ -4,6 +4,7 @@
 //! - BitNet ternary quantization (pack/unpack/matmul)
 //! - VSA gradient compression
 //! - AbsMean weight quantization
+//! - Memory estimation and OOM prevention (via rust-ai-core)
 //!
 //! # Why
 //!
@@ -14,6 +15,9 @@
 use numpy::{PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use rust_ai_core::memory::MemoryTracker;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 /// Result type for tritter-accel operations.
 type Result<T> = std::result::Result<T, TritterAccelError>;
@@ -84,8 +88,8 @@ fn pack_ternary_weights<'py>(
         }
     }
 
-    let packed_array = PyArray1::from_vec(py, packed);
-    Ok((packed_array.into_bound(py), (rows, cols)))
+    let packed_array = PyArray1::from_vec_bound(py, packed);
+    Ok((packed_array, (rows, cols)))
 }
 
 /// Unpack ternary weights from 2-bit representation.
@@ -123,9 +127,9 @@ fn unpack_ternary_weights<'py>(
         }
     }
 
-    let array = PyArray2::from_vec2(py, &unpacked.chunks(cols).map(|c| c.to_vec()).collect::<Vec<_>>())
+    let array = PyArray2::from_vec2_bound(py, &unpacked.chunks(cols).map(|c| c.to_vec()).collect::<Vec<_>>())
         .map_err(|e| PyValueError::new_err(format!("Failed to create array: {}", e)))?;
-    Ok(array.into_bound(py))
+    Ok(array)
 }
 
 // ============================================================================
@@ -194,9 +198,9 @@ fn ternary_matmul<'py>(
         }
     }
 
-    let result = PyArray2::from_vec2(py, &output.chunks(out_features).map(|c| c.to_vec()).collect::<Vec<_>>())
+    let result = PyArray2::from_vec2_bound(py, &output.chunks(out_features).map(|c| c.to_vec()).collect::<Vec<_>>())
         .map_err(|e| PyValueError::new_err(format!("Failed to create array: {}", e)))?;
-    Ok(result.into_bound(py))
+    Ok(result)
 }
 
 // ============================================================================
@@ -244,11 +248,11 @@ fn quantize_weights_absmean<'py>(
         }
     }
 
-    let ternary_array = PyArray2::from_vec2(py, &ternary.chunks(in_features).map(|c| c.to_vec()).collect::<Vec<_>>())
+    let ternary_array = PyArray2::from_vec2_bound(py, &ternary.chunks(in_features).map(|c| c.to_vec()).collect::<Vec<_>>())
         .map_err(|e| PyValueError::new_err(format!("Failed to create array: {}", e)))?;
-    let scales_array = PyArray1::from_vec(py, scales);
+    let scales_array = PyArray1::from_vec_bound(py, scales);
 
-    Ok((ternary_array.into_bound(py), scales_array.into_bound(py)))
+    Ok((ternary_array, scales_array))
 }
 
 // ============================================================================
@@ -298,8 +302,8 @@ fn compress_gradients_vsa<'py>(
         }
     }
 
-    let result = PyArray1::from_vec(py, compressed);
-    Ok(result.into_bound(py))
+    let result = PyArray1::from_vec_bound(py, compressed);
+    Ok(result)
 }
 
 /// Decompress VSA-compressed gradients.
@@ -328,8 +332,8 @@ fn decompress_gradients_vsa<'py>(
         decompressed[i] = comp_arr[source_idx] * sign;
     }
 
-    let result = PyArray1::from_vec(py, decompressed);
-    Ok(result.into_bound(py))
+    let result = PyArray1::from_vec_bound(py, decompressed);
+    Ok(result)
 }
 
 // ============================================================================
@@ -357,6 +361,220 @@ fn version() -> &'static str {
 }
 
 // ============================================================================
+// Memory Management (from rust-ai-core)
+// ============================================================================
+
+/// Get bytes per element for a dtype string.
+fn dtype_size(dtype: &str) -> PyResult<usize> {
+    match dtype.to_lowercase().as_str() {
+        "f32" | "float32" => Ok(4),
+        "f16" | "float16" | "bf16" | "bfloat16" => Ok(2),
+        "f64" | "float64" => Ok(8),
+        "u8" | "uint8" | "i8" | "int8" => Ok(1),
+        "u32" | "uint32" | "i32" | "int32" => Ok(4),
+        "i64" | "int64" => Ok(8),
+        _ => Err(PyValueError::new_err(format!("Unsupported dtype: {dtype}"))),
+    }
+}
+
+/// Estimate memory in bytes for a tensor with given shape.
+///
+/// # Arguments
+/// * `shape` - Tensor dimensions as a list
+/// * `dtype` - Data type: "f32", "f16", "bf16", "f64"
+///
+/// # Returns
+/// Memory requirement in bytes
+#[pyfunction]
+fn estimate_memory_bytes(shape: Vec<usize>, dtype: &str) -> PyResult<usize> {
+    let bytes_per_elem = dtype_size(dtype)?;
+    let numel: usize = shape.iter().product();
+    Ok(numel * bytes_per_elem)
+}
+
+/// Estimate memory for attention layer.
+///
+/// Computes Q, K, V + attention weights + output memory.
+/// Attention weights are O(seq_len²) - the main memory bottleneck.
+///
+/// # Arguments
+/// * `batch_size` - Batch size
+/// * `num_heads` - Number of attention heads
+/// * `seq_len` - Sequence length
+/// * `head_dim` - Dimension per head
+/// * `dtype` - Data type
+///
+/// # Returns
+/// Estimated memory in bytes
+#[pyfunction]
+fn estimate_attention_bytes(
+    batch_size: usize,
+    num_heads: usize,
+    seq_len: usize,
+    head_dim: usize,
+    dtype: &str,
+) -> PyResult<usize> {
+    let bytes_per_elem = dtype_size(dtype)?;
+
+    // Q, K, V tensors
+    let qkv_bytes = 3 * batch_size * num_heads * seq_len * head_dim * bytes_per_elem;
+
+    // Attention weights matrix (the O(n²) component)
+    let attn_weights_bytes = batch_size * num_heads * seq_len * seq_len * bytes_per_elem;
+
+    // Output tensor
+    let output_bytes = batch_size * num_heads * seq_len * head_dim * bytes_per_elem;
+
+    Ok(qkv_bytes + attn_weights_bytes + output_bytes)
+}
+
+/// Estimate total training memory for a model.
+///
+/// Training requires: model weights + optimizer state + gradients + activations.
+/// For Adam optimizer: ~3x model weights (weights + momentum + variance).
+/// For gradients: ~1x model weights.
+/// For activations: ~2-4x model weights (depends on batch size and checkpointing).
+///
+/// # Arguments
+/// * `param_count` - Total number of model parameters
+/// * `batch_size` - Training batch size
+/// * `seq_len` - Sequence length
+/// * `hidden_dim` - Model hidden dimension
+/// * `num_layers` - Number of transformer layers
+/// * `dtype` - Data type ("f32", "f16", "bf16")
+/// * `gradient_checkpointing` - Whether gradient checkpointing is enabled
+///
+/// # Returns
+/// Tuple of (model_bytes, optimizer_bytes, gradient_bytes, activation_bytes, total_bytes)
+#[pyfunction]
+fn estimate_training_memory(
+    param_count: usize,
+    batch_size: usize,
+    seq_len: usize,
+    hidden_dim: usize,
+    num_layers: usize,
+    dtype: &str,
+    gradient_checkpointing: bool,
+) -> PyResult<(usize, usize, usize, usize, usize)> {
+    let bytes_per_param = match dtype.to_lowercase().as_str() {
+        "f32" | "float32" => 4,
+        "f16" | "float16" | "bf16" | "bfloat16" => 2,
+        _ => return Err(PyValueError::new_err(format!("Unsupported dtype: {dtype}"))),
+    };
+
+    // Model weights
+    let model_bytes = param_count * bytes_per_param;
+
+    // Optimizer state (Adam: 2 states per param, usually in f32)
+    let optimizer_bytes = param_count * 4 * 2; // momentum + variance in f32
+
+    // Gradients (same dtype as model)
+    let gradient_bytes = param_count * bytes_per_param;
+
+    // Activations (rough estimate)
+    // Each layer stores: hidden states, attention outputs, intermediate
+    let activation_per_layer = batch_size * seq_len * hidden_dim * bytes_per_param * 3;
+    let activation_bytes = if gradient_checkpointing {
+        // With checkpointing: only sqrt(layers) activations stored
+        let stored_layers = (num_layers as f64).sqrt().ceil() as usize;
+        activation_per_layer * stored_layers
+    } else {
+        // Without checkpointing: all layers stored
+        activation_per_layer * num_layers
+    };
+
+    // Apply 10% overhead for fragmentation
+    let total = ((model_bytes + optimizer_bytes + gradient_bytes + activation_bytes) as f64 * 1.1) as usize;
+
+    Ok((model_bytes, optimizer_bytes, gradient_bytes, activation_bytes, total))
+}
+
+/// Python-accessible memory tracker wrapper.
+#[pyclass]
+struct PyMemoryTracker {
+    inner: Arc<Mutex<MemoryTracker>>,
+}
+
+#[pymethods]
+impl PyMemoryTracker {
+    /// Create a new memory tracker with optional limit.
+    ///
+    /// # Arguments
+    /// * `limit_bytes` - Optional memory limit (0 or None = unlimited)
+    #[new]
+    #[pyo3(signature = (limit_bytes=None))]
+    fn new(limit_bytes: Option<usize>) -> Self {
+        let tracker = match limit_bytes {
+            Some(limit) if limit > 0 => MemoryTracker::with_limit(limit),
+            _ => MemoryTracker::new(),
+        };
+        Self {
+            inner: Arc::new(Mutex::new(tracker)),
+        }
+    }
+
+    /// Check if an allocation would fit within the limit.
+    fn would_fit(&self, bytes: usize) -> bool {
+        self.inner.lock().unwrap().would_fit(bytes)
+    }
+
+    /// Record an allocation (for tracking purposes).
+    fn allocate(&self, bytes: usize) -> PyResult<()> {
+        self.inner.lock().unwrap().allocate(bytes)
+            .map_err(|e| PyValueError::new_err(format!("OOM: {e}")))
+    }
+
+    /// Record a deallocation.
+    fn deallocate(&self, bytes: usize) {
+        self.inner.lock().unwrap().deallocate(bytes);
+    }
+
+    /// Get currently allocated bytes.
+    fn allocated_bytes(&self) -> usize {
+        self.inner.lock().unwrap().allocated_bytes()
+    }
+
+    /// Get peak allocation.
+    fn peak_bytes(&self) -> usize {
+        self.inner.lock().unwrap().peak_bytes()
+    }
+
+    /// Get configured limit (0 = unlimited).
+    fn limit_bytes(&self) -> usize {
+        self.inner.lock().unwrap().limit_bytes()
+    }
+
+    /// Reset the tracker.
+    fn reset(&self) {
+        self.inner.lock().unwrap().reset();
+    }
+
+    /// Check if training would fit given model parameters.
+    ///
+    /// This is a convenience method that estimates training memory
+    /// and checks if it fits within the limit.
+    fn would_training_fit(
+        &self,
+        param_count: usize,
+        batch_size: usize,
+        seq_len: usize,
+        hidden_dim: usize,
+        num_layers: usize,
+        dtype: &str,
+        gradient_checkpointing: bool,
+    ) -> PyResult<(bool, usize, usize)> {
+        let (_, _, _, _, total) = estimate_training_memory(
+            param_count, batch_size, seq_len, hidden_dim, num_layers, dtype, gradient_checkpointing
+        )?;
+
+        let limit = self.inner.lock().unwrap().limit_bytes();
+        let fits = if limit == 0 { true } else { total <= limit };
+
+        Ok((fits, total, limit))
+    }
+}
+
+// ============================================================================
 // Python Module
 // ============================================================================
 
@@ -369,14 +587,29 @@ fn version() -> &'static str {
 /// - quantize_weights_absmean: AbsMean quantization for BitNet
 /// - compress_gradients_vsa: VSA gradient compression
 /// - decompress_gradients_vsa: VSA gradient decompression
+/// - estimate_memory_bytes: Estimate tensor memory
+/// - estimate_attention_bytes: Estimate attention layer memory
+/// - estimate_training_memory: Estimate full training memory
+/// - MemoryTracker: OOM prevention via memory tracking
 #[pymodule]
 fn tritter_accel(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Ternary operations
     m.add_function(wrap_pyfunction!(pack_ternary_weights, m)?)?;
     m.add_function(wrap_pyfunction!(unpack_ternary_weights, m)?)?;
     m.add_function(wrap_pyfunction!(ternary_matmul, m)?)?;
     m.add_function(wrap_pyfunction!(quantize_weights_absmean, m)?)?;
+
+    // VSA compression
     m.add_function(wrap_pyfunction!(compress_gradients_vsa, m)?)?;
     m.add_function(wrap_pyfunction!(decompress_gradients_vsa, m)?)?;
+
+    // Memory management (from rust-ai-core)
+    m.add_function(wrap_pyfunction!(estimate_memory_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(estimate_attention_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(estimate_training_memory, m)?)?;
+    m.add_class::<PyMemoryTracker>()?;
+
+    // Utilities
     m.add_function(wrap_pyfunction!(cuda_available, m)?)?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
     Ok(())

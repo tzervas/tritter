@@ -1,0 +1,91 @@
+# Claude Code Configuration for Tritter
+# This file configures Claude Code CLI behavior for the Tritter project
+
+[project]
+name = "Tritter"
+description = "Multimodal transformer with BitNet 1.58-bit quantization"
+type = "ml-research"
+language = "python"
+
+[model]
+# Default model selection based on task complexity
+# Can be overridden with --model flag
+default = "sonnet"
+# Use Opus for architecture decisions and complex optimizations
+prefer_opus_for = ["architecture", "optimization", "design", "memory", "quantization"]
+# Use Haiku for simple tasks
+prefer_haiku_for = ["format", "lint", "typo", "documentation"]
+
+[hooks]
+# Enable session start hook to verify environment
+session_start = ".github/hooks/session-start.sh"
+# Enable pre-commit hook for quality gates
+pre_commit = ".github/hooks/pre-commit.sh"
+# Enable prompt submit hook for task routing
+prompt_submit = ".github/hooks/prompt-submit.sh"
+
+[skills]
+# Custom skills for Tritter development
+# Located in .github/skills/
+enabled = ["validate", "typecheck", "test", "lint", "arch", "standards"]
+
+[memory]
+# Enable auto-memory for learning from mistakes
+enabled = true
+directory = ".claude/memory"
+
+[effort]
+# Default effort level for different branch types
+feature = "medium"
+development = "medium"
+release = "high"
+production = "high"
+
+[context]
+# Files to always include in context
+always_include = [
+    "CLAUDE.md",
+    "docs/DEVELOPMENT_STANDARDS.md",
+    "docs/API_CONVENTIONS.md",
+    ".github/ci-config.yml"
+]
+
+[quality_gates]
+# Integrate with progressive CI
+enabled = true
+config_file = ".github/ci-config.yml"
+enforce_on_commit = true
+
+[mcp_servers]
+# Model Context Protocol servers
+# Configure if using external tools/databases
+# Example:
+# [mcp_servers.filesystem]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/tritter"]
+
+[permissions]
+# Permission settings for tool execution
+mode = "relaxed"  # relaxed | normal | strict
+allow_edit = true
+allow_write = true
+allow_bash = true
+require_approval_for = ["git push", "rm -rf", "docker", "uv pip install"]
+
+[git]
+# Git integration settings
+auto_stage = false  # Don't auto-stage files
+require_commit_message = true
+enforce_conventional_commits = false
+
+[testing]
+# Testing preferences
+auto_run_tests = false  # Don't auto-run tests unless asked
+test_framework = "pytest"
+coverage_threshold = 70
+
+[documentation]
+# Documentation standards
+require_docstrings = true
+docstring_style = "google"
+require_type_hints = true
