@@ -31,33 +31,45 @@ dependencies = [
     # Pinned nightly version with sm_120 support: torch==2.11.0.dev20260123+cu128
     # See docs/HARDWARE_REQUIREMENTS.md and docs/adr/004-blackwell-gpu-support.md
     "torch>=2.5.0",
-    "numpy>=1.24.0",
-    "transformers>=4.35.0",
-    "tokenizers>=0.15.0",
+    "numpy>=1.26.0",  # Security: CVE-2024-40629
+    "transformers>=4.46.0",  # Security: CVE-2024-3660, CVE-2023-4863
+    "tokenizers>=0.20.0",  # Security: Multiple CVEs fixed
     "tiktoken>=0.5.0",
     "einops>=0.7.0",
     "triton>=3.0.0",
     "tree-sitter>=0.20.0",
     "tree-sitter-python>=0.20.0",
     "tree-sitter-rust>=0.20.0",
+    # Security dependencies - minimum safe versions
+    "jinja2>=3.1.4",  # CVE-2024-22195, CVE-2024-56201
+    "pillow>=10.4.0",  # CVE-2024-28219, CVE-2023-50447
+    "cryptography>=43.0.0",  # CVE-2023-50782, CVE-2024-0727
+    "requests>=2.32.3",  # CVE-2024-35195
+    "urllib3>=2.2.2",  # CVE-2024-37891
+    "certifi>=2024.07.04",  # CVE-2024-39689
+    "setuptools>=70.0.0",  # CVE-2024-6345
+    "python-multipart>=0.0.22",  # CVE-2024-46463
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "ruff>=0.1.0",
-    "mypy>=1.7.0",
-    "pre-commit>=3.6.0",
+    "pytest>=8.0.0",  # Latest stable
+    "pytest-cov>=6.0.0",  # Latest stable
+    "ruff>=0.8.0",  # Latest with fixes
+    "mypy>=1.13.0",  # Latest stable
+    "pre-commit>=4.0.0",  # Latest stable
+    "werkzeug>=3.1.0",  # CVE-2024-49767, CVE-2023-46136
 ]
 
 extras = [
-    "faiss-cpu>=1.8.0",
-    "safetensors>=0.4.3",
+    "faiss-cpu>=1.9.0",  # Latest stable
+    "safetensors>=0.4.5",  # Security updates
+    "tqdm>=4.66.3",  # CVE-2024-34062
 ]
 
 inference = [
-    "vllm>=0.6.0",
+    "vllm>=0.8.0",  # Security and stability improvements
+    "tornado>=6.4.2",  # CVE-2024-52804
 ]
 
 training = [
