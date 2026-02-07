@@ -77,7 +77,7 @@ echo -e "Branch: ${GREEN}${CURRENT_BRANCH}${NC}"
 
 # Detect CI strictness level
 if [[ -f ".github/scripts/detect-branch-strictness.sh" ]]; then
-    eval "$(.github/scripts/detect-branch-strictness.sh 2>/dev/null || echo 'STRICTNESS_NAME=UNKNOWN')"
+    eval "$(bash .github/scripts/detect-branch-strictness.sh 2>/dev/null || echo 'export STRICTNESS_NAME=UNKNOWN')"
     echo -e "CI Strictness: ${YELLOW}${STRICTNESS_NAME:-UNKNOWN}${NC}"
 fi
 

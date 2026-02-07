@@ -137,16 +137,22 @@ get_check_config() {
     level_key=$(get_level_config_key "$level")
 
     # Read from config file under strictness_levels section
-    awk -v level="$level_key:" -v check="    $check:" '
-        $0 ~ level { found=1; next }
-        found && $0 ~ check {
+    # First find strictness_levels:, then find the level within it
+    awk -v level_key="$level_key" -v check="$check" '
+        /^strictness_levels:/ { in_strictness=1; next }
+        in_strictness && $0 ~ "^  " level_key ":" { in_level=1; next }
+        in_level && $0 ~ "^    " check ":" {
             sub(/.*: /, "");
             gsub(/"/, "");
             gsub(/'\''/, "");
+            gsub(/#.*/, "");  # Remove comments
+            gsub(/^[[:space:]]+/, "");  # Trim leading whitespace
+            gsub(/[[:space:]]+$/, "");  # Trim trailing whitespace
             print;
             exit
         }
-        found && /^  [a-z]/ && $0 !~ check { exit }
+        in_level && /^  [a-z]/ { exit }
+        in_strictness && /^[a-z]/ { exit }
     ' "$CONFIG_FILE"
 }
 

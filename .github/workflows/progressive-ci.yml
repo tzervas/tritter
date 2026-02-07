@@ -56,15 +56,10 @@ jobs:
           # Install bc for floating point comparison in coverage checks
           sudo apt-get update && sudo apt-get install -y bc
 
-      - name: Make scripts executable
-        run: |
-          chmod +x .github/scripts/detect-branch-strictness.sh
-          chmod +x .github/scripts/run-ci.sh
-
       - name: Detect branch strictness level
         id: strictness
         run: |
-          eval "$(.github/scripts/detect-branch-strictness.sh)"
+          eval "$(bash .github/scripts/detect-branch-strictness.sh)"
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
           echo "level=$STRICTNESS_LEVEL" >> $GITHUB_OUTPUT
           echo "name=$STRICTNESS_NAME" >> $GITHUB_OUTPUT
@@ -74,7 +69,7 @@ jobs:
 
       - name: Run progressive CI checks
         run: |
-          .github/scripts/run-ci.sh
+          bash .github/scripts/run-ci.sh
 
       - name: Upload coverage reports
         if: always()

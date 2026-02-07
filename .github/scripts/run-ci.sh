@@ -33,7 +33,7 @@ fi
 
 # Detect strictness level
 if [[ -f "$SCRIPT_DIR/detect-branch-strictness.sh" ]]; then
-    eval "$("$SCRIPT_DIR/detect-branch-strictness.sh")"
+    eval "$(bash "$SCRIPT_DIR/detect-branch-strictness.sh")"
 else
     echo -e "${RED}Error: detect-branch-strictness.sh not found${NC}"
     exit 1

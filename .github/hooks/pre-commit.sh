@@ -16,7 +16,7 @@ echo -e "${YELLOW}Running pre-commit quality checks...${NC}"
 
 # Detect branch strictness
 if [[ -f ".github/scripts/detect-branch-strictness.sh" ]]; then
-    eval "$(.github/scripts/detect-branch-strictness.sh)"
+    eval "$(bash .github/scripts/detect-branch-strictness.sh)"
 else
     echo -e "${RED}Error: Strictness detection script not found${NC}"
     exit 1
