@@ -162,8 +162,24 @@ run_coverage_check() {
 
     echo -e "Coverage: ${BOLD}${coverage_percent}%${NC}"
 
-    # Compare coverage (handle floating point)
-    if (( $(echo "$coverage_percent < ${CHECK_COVERAGE_THRESHOLD}" | bc -l 2>/dev/null || echo "1") )); then
+    # Validate prerequisites for coverage comparison
+    if [[ -z "${CHECK_COVERAGE_THRESHOLD:-}" ]]; then
+        echo -e "${YELLOW}⚠️  Coverage threshold not configured, skipping check${NC}"
+        ((CHECKS_WARNED++))
+        echo ""
+        return 0
+    fi
+
+    # Check if bc is available for floating point comparison
+    if ! command -v bc &> /dev/null; then
+        echo -e "${YELLOW}⚠️  bc command not found, cannot compare coverage (install: apt-get install bc)${NC}"
+        ((CHECKS_WARNED++))
+        echo ""
+        return 0
+    fi
+
+    # Compare coverage (safe now - tools and threshold verified)
+    if (( $(echo "$coverage_percent < ${CHECK_COVERAGE_THRESHOLD}" | bc -l) )); then
         if [[ "$STRICTNESS_LEVEL" == "0" ]]; then
             echo -e "${YELLOW}${BOLD}⚠️  Warning${NC}: Coverage below ${CHECK_COVERAGE_THRESHOLD}% (acceptable for ${STRICTNESS_NAME} level)"
             ((CHECKS_WARNED++))
@@ -309,16 +325,16 @@ main() {
 
     # Tests (skip GPU and slow tests based on config)
     if [[ "${CHECK_GPU_TESTS:-skip}" == "skip" ]] && [[ "${CHECK_SLOW_TESTS:-skip}" == "skip" ]]; then
-        run_check "Unit Tests" "CHECK_LINT" "$(get_command "test")" || true
+        run_check "Unit Tests" "CHECK_TESTS" "$(get_command "test")" || true
     else
-        run_check "All Tests" "CHECK_LINT" "$(get_command "test_all")" || true
+        run_check "All Tests" "CHECK_TESTS" "$(get_command "test_all")" || true
     fi
 
     # Coverage
     run_coverage_check || true
 
-    # Build check
-    run_check "Import Check" "CHECK_FORMAT" "$(get_command "import_check")" || true
+    # Import validation
+    run_check "Import Check" "CHECK_IMPORTS" "$(get_command "import_check")" || true
 
     # Custom checks (Tritter-specific)
     run_custom_checks || true

@@ -130,15 +130,28 @@ get_level_config_key() {
 }
 
 # Get check configuration for level
+# IMPORTANT: This parser expects a specific YAML structure:
+#   strictness_levels:
+#     level_name:        (2 spaces indent)
+#       check_name: value (4 spaces indent)
+# Deviating from this structure will cause parsing failures.
+# For complex YAML, consider using a Python helper with PyYAML.
 get_check_config() {
     local level="$1"
     local check="$2"
     local level_key
     level_key=$(get_level_config_key "$level")
 
+    # Validate config file has expected structure
+    if ! grep -q "^strictness_levels:" "$CONFIG_FILE"; then
+        echo -e "${RED}ERROR: ci-config.yml missing 'strictness_levels:' section${NC}" >&2
+        return 1
+    fi
+
     # Read from config file under strictness_levels section
     # First find strictness_levels:, then find the level within it
-    awk -v level_key="$level_key" -v check="$check" '
+    local result
+    result=$(awk -v level_key="$level_key" -v check="$check" '
         /^strictness_levels:/ { in_strictness=1; next }
         in_strictness && $0 ~ "^  " level_key ":" { in_level=1; next }
         in_level && $0 ~ "^    " check ":" {
@@ -153,7 +166,14 @@ get_check_config() {
         }
         in_level && /^  [a-z]/ { exit }
         in_strictness && /^[a-z]/ { exit }
-    ' "$CONFIG_FILE"
+    ' "$CONFIG_FILE")
+
+    # Validate result (warn if config missing, but don't fail)
+    if [[ -z "$result" ]] && [[ "$check" != "todos" ]] && [[ "$check" != "debug_code" ]]; then
+        echo -e "${YELLOW}WARNING: ci-config.yml missing ${level_key}.${check} configuration${NC}" >&2
+    fi
+
+    echo "$result"
 }
 
 # Main execution
@@ -180,7 +200,7 @@ main() {
     echo "export STRICTNESS_NAME='$level_name'"
 
     # Output all check configurations
-    for check in format lint typecheck coverage_threshold todos debug_code pedantic_lint security_audit auto_fix gpu_tests slow_tests; do
+    for check in format lint typecheck tests imports coverage_threshold todos debug_code pedantic_lint security_audit auto_fix gpu_tests slow_tests; do
         local config
         config=$(get_check_config "$level" "$check")
         if [[ -n "$config" ]]; then

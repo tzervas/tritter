@@ -22,6 +22,8 @@ strictness_levels:
     format: warn          # warn | error | skip
     lint: warn
     typecheck: warn       # MyPy strict mode
+    tests: warn           # Unit tests
+    imports: warn         # Import validation
     coverage_threshold: 50
     todos: allow          # allow | warn | error
     debug_code: allow
@@ -36,6 +38,8 @@ strictness_levels:
     format: error
     lint: warn
     typecheck: warn
+    tests: warn
+    imports: warn
     coverage_threshold: 70
     todos: allow
     debug_code: warn
@@ -50,6 +54,8 @@ strictness_levels:
     format: error
     lint: error
     typecheck: error
+    tests: error
+    imports: error
     coverage_threshold: 80
     todos: warn
     debug_code: error
@@ -64,6 +70,8 @@ strictness_levels:
     format: error
     lint: error
     typecheck: error
+    tests: error
+    imports: error
     coverage_threshold: 85
     todos: error
     debug_code: error
@@ -119,8 +127,9 @@ custom_checks:
     production: error
 
   # Security: Check for hardcoded secrets, vulnerabilities
+  # CRITICAL: Uses wrapper script to distinguish "not installed" from "secrets found"
   security_scan:
-    command: 'python -m tritter.curation.secrets scan . || echo "Security scanner not available"'
+    command: 'bash .github/scripts/security-scan-wrapper.sh'
     feature: warn
     development: error
     release: error

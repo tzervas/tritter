@@ -69,13 +69,13 @@ class HybridGradientPredictor:
 
     def __init__(
         self,
-        memory_budget_mb: float = 512.0,
         history_length: int = 10,
         ema_beta: float = 0.9,
         base_damping: float = 0.5,
         min_confidence: float = 0.1,
     ):
-        self.memory_budget_mb = memory_budget_mb
+        # Note: memory_budget_mb removed - not enforced, misleading parameter
+        # Gradient history is bounded by history_length instead
         self.history_length = history_length
         self.ema_beta = ema_beta
         self.base_damping = base_damping

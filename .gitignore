@@ -244,3 +244,8 @@ mlruns/
 .cache/huggingface/
 ~/.cache/huggingface/
 
+
+# Benchmark results (timestamped, don't commit)
+benchmarks/**/
+!benchmarks/.gitkeep
+!benchmarks/README.md
