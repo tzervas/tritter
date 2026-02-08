@@ -26,6 +26,8 @@ import numpy as np
 if TYPE_CHECKING:
     import numpy.typing as npt
 
+ACCEL_AVAILABLE: bool = False
+
 # Try to import Rust acceleration
 try:
     from tritter_accel import (

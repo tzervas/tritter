@@ -15,6 +15,10 @@ Example usage:
     >>> # Use with your training loop
 """
 
+from tritter.training.optimization.vsa_utils import VSAKeyedBundler, make_random_keys
+
+_VSA_AVAILABLE: bool = False
+
 try:
     from vsa_optimizer import (
         # Gradient prediction
@@ -39,9 +43,7 @@ try:
 
     _VSA_AVAILABLE = True
 except ImportError:
-    _VSA_AVAILABLE = False
-
-from tritter.training.optimization.vsa_utils import VSAKeyedBundler, make_random_keys
+    pass
 
 __all__ = [
     # Always available (local implementations)

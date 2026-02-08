@@ -50,7 +50,7 @@ echo -e "Config: ${CYAN}${CONFIG_FILE}${NC}"
 echo ""
 
 # Get project language
-PROJECT_LANGUAGE=$(awk '/^  language:/ { sub(/.*: /, ""); gsub(/"/, ""); gsub(/'\''/, ""); print; exit }' "$CONFIG_FILE")
+PROJECT_LANGUAGE=$(awk '/^  language:/ { sub(/.*: /, ""); if (substr($0, 1, 1) == "'\''") { sub(/^'\''/, ""); sub(/'\''$/, ""); } else if (substr($0, 1, 1) == "\"") { sub(/^"/, ""); sub(/"$/, ""); } print; exit }' "$CONFIG_FILE")
 
 # Get command for specific check
 get_command() {
@@ -59,8 +59,8 @@ get_command() {
         $0 ~ lang { found=1; next }
         found && $0 ~ check {
             sub(/.*: /, "");
-            gsub(/"/, "");
-            gsub(/'\''/, "");
+            if (substr($0, 1, 1) == "'\''") { sub(/^'\''/, ""); sub(/'\''$/, ""); }
+            else if (substr($0, 1, 1) == "\"") { sub(/^"/, ""); sub(/"$/, ""); }
             print;
             exit
         }
@@ -236,9 +236,9 @@ run_custom_checks() {
                 current_command=""
                 current_level_config=""
             elif [[ "$line" =~ command: ]]; then
-                current_command=$(echo "$line" | sed 's/.*command:[[:space:]]*//;s/"//g;s/'\''//g')
+                current_command=$(echo "$line" | sed 's/.*command:[[:space:]]*//' | sed "s/^'\\(.*\\)'$/\\1/" | sed 's/^"\(.*\)"$/\1/')
             elif [[ "$line" =~ [[:space:]]{4}${STRICTNESS_LEVEL}: ]] || [[ "$line" =~ [[:space:]]{4}$(get_level_config_key "$STRICTNESS_LEVEL"): ]]; then
-                current_level_config=$(echo "$line" | sed 's/.*:[[:space:]]*//;s/"//g;s/'\''//g')
+                current_level_config=$(echo "$line" | sed 's/.*:[[:space:]]*//' | sed "s/^'\\(.*\\)'$/\\1/" | sed 's/^"\(.*\)"$/\1/')
             fi
         fi
     done < "$CONFIG_FILE"
