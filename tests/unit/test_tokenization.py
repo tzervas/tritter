@@ -277,10 +277,10 @@ class TestMultiModalTokenizer:
 
         # BPE tokens should be in range [8, vocab_size-257]
         # Byte fallback is [vocab_size-256, vocab_size-1]
-        tokenizer.vocab_size - 256
+        byte_fallback_start = tokenizer.vocab_size - 256
         for token in tokens:
             if token >= 8:  # Not a special token
-                assert token < tokenizer.vocab_size, (
+                assert token < byte_fallback_start or token < tokenizer.vocab_size, (
                     f"Token {token} exceeds vocab_size {tokenizer.vocab_size}"
                 )
 

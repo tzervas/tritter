@@ -276,19 +276,40 @@ class TritterAttention(nn.Module):  # type: ignore[misc]
         key = repeat_kv(key, self.num_kv_groups)  # (B, num_heads, L, head_dim)
         value = repeat_kv(value, self.num_kv_groups)  # (B, num_heads, L, head_dim)
 
-        # Use FlashAttention if enabled (significantly faster and more memory efficient)
+        # Attention computation with causal masking
+        # Why: is_causal=True and attn_mask conflict in PyTorch's SDPA — you cannot pass
+        # both. When an external mask is provided (e.g., padding), we must combine it with
+        # a causal mask explicitly and pass the combined mask via attn_mask.
         if getattr(self.config, "use_flash_attention", False):
-            # Why: Use is_causal=True for optimal kernel dispatch when no explicit mask
-            # is provided. This triggers FlashAttention-2's optimized causal kernel that
-            # never materializes the O(N^2) causal mask, critical for 128K context.
-            attn_output = torch.nn.functional.scaled_dot_product_attention(
-                query,  # (B, H, L, head_dim)
-                key,  # (B, H, L, head_dim)
-                value,  # (B, H, L, head_dim)
-                attn_mask=attention_mask,
-                dropout_p=0.0,
-                is_causal=attention_mask is None,
-            )  # -> (B, H, L, head_dim)
+            if attention_mask is None:
+                # No external mask: use is_causal=True for optimal FlashAttention kernel
+                # that never materializes the O(N^2) mask, critical for 128K context.
+                attn_output = torch.nn.functional.scaled_dot_product_attention(
+                    query,
+                    key,
+                    value,
+                    dropout_p=0.0,
+                    is_causal=True,
+                )  # -> (B, H, L, head_dim)
+            else:
+                # External mask provided: combine with causal mask to preserve causality
+                causal_mask = (
+                    torch.triu(
+                        torch.full((seq_len, seq_len), float("-inf"), device=hidden_states.device),
+                        diagonal=1,
+                    )
+                    .unsqueeze(0)
+                    .unsqueeze(0)
+                )  # (1, 1, L, L)
+                combined_mask = attention_mask + causal_mask
+                attn_output = torch.nn.functional.scaled_dot_product_attention(
+                    query,
+                    key,
+                    value,
+                    attn_mask=combined_mask,
+                    dropout_p=0.0,
+                    is_causal=False,
+                )  # -> (B, H, L, head_dim)
         else:
             # Fallback: Standard scaled dot-product attention with causal mask
             causal_mask = torch.triu(
