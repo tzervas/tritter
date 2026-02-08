@@ -1,0 +1,4 @@
+# Benchmark Results
+
+Benchmark results are timestamped and should not be committed to the repository.
+Add all benchmark result directories to .gitignore instead.

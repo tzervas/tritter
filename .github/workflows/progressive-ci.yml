@@ -1,0 +1,218 @@
+name: Progressive CI Quality Gates
+
+# Manual trigger only - run checks locally first
+# Cost optimization: use local checks (bash .github/scripts/run-ci.sh)
+# CI provides verification before critical merges
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to run CI on (defaults to current)'
+        required: false
+        type: string
+      strictness_override:
+        description: 'Override strictness level (0-3, leave empty for auto-detect)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - '0'
+          - '1'
+          - '2'
+          - '3'
+
+env:
+  PYTHON_VERSION: "3.12"
+  CI_CONFIG_FILE: ".github/ci-config.yml"
+
+# Minimal permissions - security best practice
+permissions:
+  contents: read
+  pull-requests: write  # For PR comments only
+  issues: write  # For issue comments only
+
+jobs:
+  progressive-quality-gate:
+    name: Quality Gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        # Add macos-latest, windows-latest for cross-platform testing if needed
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for branch detection
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install uv (fast package installer)
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e ".[dev,training,curation]"
+          # Install bc for floating point comparison in coverage checks
+          sudo apt-get update && sudo apt-get install -y bc
+
+      - name: Detect branch strictness level
+        id: strictness
+        run: |
+          # Use override if provided, otherwise auto-detect
+          if [[ -n "${{ github.event.inputs.strictness_override }}" ]]; then
+            export STRICTNESS_LEVEL="${{ github.event.inputs.strictness_override }}"
+            export BRANCH="${{ github.event.inputs.branch || github.ref_name }}"
+            case "$STRICTNESS_LEVEL" in
+              0) export STRICTNESS_NAME="FEATURE" ;;
+              1) export STRICTNESS_NAME="DEVELOPMENT" ;;
+              2) export STRICTNESS_NAME="RELEASE" ;;
+              3) export STRICTNESS_NAME="PRODUCTION" ;;
+            esac
+            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+            echo "level=$STRICTNESS_LEVEL" >> $GITHUB_OUTPUT
+            echo "name=$STRICTNESS_NAME" >> $GITHUB_OUTPUT
+          else
+            eval "$(bash .github/scripts/detect-branch-strictness.sh)"
+            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+            echo "level=$STRICTNESS_LEVEL" >> $GITHUB_OUTPUT
+            echo "name=$STRICTNESS_NAME" >> $GITHUB_OUTPUT
+          fi
+          echo "### Progressive CI Configuration (Manual Trigger)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: \`$BRANCH\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Strictness Level**: $STRICTNESS_LEVEL ($STRICTNESS_NAME)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Note**: CI is manual-only. Run \`bash scripts/run-checks-local.sh\` locally first." >> $GITHUB_STEP_SUMMARY
+
+      - name: Run progressive CI checks
+        run: |
+          bash .github/scripts/run-ci.sh
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports-${{ matrix.os }}
+          path: |
+            coverage.json
+            htmlcov/
+            .coverage
+          retention-days: 30
+
+      - name: Comment on PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const strictnessLevel = '${{ steps.strictness.outputs.level }}';
+            const strictnessName = '${{ steps.strictness.outputs.name }}';
+            const branch = '${{ steps.strictness.outputs.branch }}';
+
+            let coveragePercent = 'N/A';
+            try {
+              if (fs.existsSync('coverage.json')) {
+                const coverage = JSON.parse(fs.readFileSync('coverage.json', 'utf8'));
+                coveragePercent = coverage.totals.percent_covered.toFixed(2) + '%';
+              }
+            } catch (e) {
+              console.log('Coverage data not available');
+            }
+
+            const body = `## 🤖 Progressive CI Results
+
+            **Branch**: \`${branch}\`
+            **Strictness Level**: ${strictnessLevel} (${strictnessName})
+            **Coverage**: ${coveragePercent}
+
+            Progressive CI adapts quality gates based on branch type:
+            - **Level 0 (Feature)**: Warnings only, 50% coverage
+            - **Level 1 (Development)**: Must format, 70% coverage
+            - **Level 2 (Release)**: Strict linting, 80% coverage
+            - **Level 3 (Production)**: Zero tolerance, 85% coverage
+
+            See [workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId}) for details.
+            `;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  # GPU tests (optional, only if GPU runners available)
+  gpu-tests:
+    name: GPU Tests
+    runs-on: [self-hosted, gpu]  # Requires self-hosted GPU runner
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
+    continue-on-error: true  # Don't fail if GPU not available
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          source $HOME/.cargo/env
+          uv pip install --system -e ".[dev,training]"
+
+      - name: Check GPU availability
+        run: |
+          python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"None\"}')"
+
+      - name: Run GPU tests
+        run: |
+          pytest -v -m gpu --tb=short
+
+  # Security scan (always runs)
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          source $HOME/.cargo/env
+          uv pip install --system -e ".[dev,curation]"
+
+      - name: Run security checks
+        run: |
+          # Check for hardcoded secrets
+          python -m tritter.curation.secrets scan .
+
+      - name: Run Bandit security scanner
+        run: |
+          pip install bandit
+          bandit -r src/tritter -ll -f json -o bandit-report.json || true
+
+      - name: Upload security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+          retention-days: 90

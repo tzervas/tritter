@@ -981,7 +981,9 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
     data_iter = iter(dataloader)
     start_time = time.time()
     total_tokens = 0
-    tokens_per_step = config.batch_size * config.gradient_accumulation_steps * config.max_seq_length
+    # Note: gradient_accumulation_steps removed from token counting
+    # Training loop doesn't implement actual gradient accumulation (no delayed optimizer.step)
+    tokens_per_step = config.batch_size * config.max_seq_length
 
     loss_history = []
     nan_streak = 0
