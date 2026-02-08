@@ -108,9 +108,7 @@ class HyperdimensionalEmbedding(BaseEmbedding):
 
         # Projection layer if needed
         if config.project_to_dim and config.project_to_dim != config.hd_dimension:
-            self.projection = nn.Linear(
-                config.hd_dimension, config.project_to_dim, bias=False
-            )
+            self.projection = nn.Linear(config.hd_dimension, config.project_to_dim, bias=False)
         else:
             self.projection = None
 

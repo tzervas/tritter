@@ -133,7 +133,7 @@ class TrainingProgress:
     def _get_gpu_memory(self) -> float:
         """Get current GPU memory usage in GB."""
         if torch.cuda.is_available():
-            return torch.cuda.memory_allocated() / 1e9
+            return torch.cuda.memory_allocated() / 1e9  # type: ignore[no-any-return]
         return 0.0
 
     def _progress_bar(self, progress: float, width: int = 30) -> str:
@@ -483,11 +483,7 @@ class Trainer:
         # Mixed precision scaler (CUDA only)
         # Why: GradScaler prevents underflow in FP16 training by scaling gradients.
         # Only needed for CUDA; CPU training uses FP32.
-        self.scaler = (
-            GradScaler()
-            if self.config.use_amp and self.device.type == "cuda"
-            else None
-        )
+        self.scaler = GradScaler() if self.config.use_amp and self.device.type == "cuda" else None
 
         # Training state
         self.global_step = 0
@@ -501,11 +497,15 @@ class Trainer:
         # Progress tracker
         # Why: Visual feedback helps monitor training progress and distinguish between
         # stuck loops and normal training. Essential for long-running jobs.
-        self.progress = TrainingProgress(
-            total_steps=training_config.max_steps,
-            log_steps=training_config.log_steps,
-            warmup_steps=training_config.warmup_steps,
-        ) if verbose else None
+        self.progress = (
+            TrainingProgress(
+                total_steps=training_config.max_steps,
+                log_steps=training_config.log_steps,
+                warmup_steps=training_config.warmup_steps,
+            )
+            if verbose
+            else None
+        )
 
         # Create output directory
         # (already created before profile logging)
@@ -573,7 +573,7 @@ class Trainer:
                 1, self.config.max_steps - self.config.warmup_steps
             )
             # Cosine annealing: 0.5 * (1 + cos(π * progress))
-            return 0.5 * (1.0 + torch.cos(torch.tensor(progress * 3.14159)).item())
+            return 0.5 * (1.0 + torch.cos(torch.tensor(progress * 3.14159)).item())  # type: ignore[no-any-return]
 
         return torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
 
@@ -779,7 +779,7 @@ class Trainer:
         if self.progress:
             self.progress.log_checkpoint(final_path)
 
-    @torch.inference_mode()
+    @torch.inference_mode()  # type: ignore[untyped-decorator]
     def evaluate(self) -> dict[str, float]:
         """Run evaluation.
 

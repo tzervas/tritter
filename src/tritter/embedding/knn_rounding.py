@@ -80,7 +80,7 @@ class KNNRouterConfig:
     normalize: bool = True
 
 
-class KNNRouter(nn.Module):
+class KNNRouter(nn.Module):  # type: ignore[misc]
     """KNN-based router for mapping embeddings to token IDs.
 
     Why: Provides the "exit point" from continuous embedding space back to

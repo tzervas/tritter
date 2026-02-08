@@ -22,48 +22,59 @@ Example usage:
     ...     print(f"Step {stats['total_step']}: loss={stats['loss']:.4f}, speedup={stats['speedup']:.2f}x")
 """
 
-# Re-export everything from the standalone package
-from vsa_optimizer import (
-    # Gradient prediction
-    GradientPredictor,
-    PredictionConfig,
-    PredictiveTrainer,
-    # Phase-based training
-    PhaseConfig,
-    PhaseTrainer,
-    TrainingPhase,
-    # Ternary optimization
-    TernaryConfig,
-    TernaryGradientAccumulator,
-    TernaryOptimizer,
-    # VSA compression
-    VSAConfig,
-    VSAGradientCompressor,
-    hyperdimensional_bind,
-    hyperdimensional_bundle,
-    ternary_quantize,
-)
+try:
+    from vsa_optimizer import (
+        # Gradient prediction
+        GradientPredictor,
+        # Phase-based training
+        PhaseConfig,
+        PhaseTrainer,
+        PredictionConfig,
+        PredictiveTrainer,
+        # Ternary optimization
+        TernaryConfig,
+        TernaryGradientAccumulator,
+        TernaryOptimizer,
+        TrainingPhase,
+        # VSA compression
+        VSAConfig,
+        VSAGradientCompressor,
+        hyperdimensional_bind,
+        hyperdimensional_bundle,
+        ternary_quantize,
+    )
+
+    _VSA_AVAILABLE = True
+except ImportError:
+    _VSA_AVAILABLE = False
+
 from tritter.training.optimization.vsa_utils import VSAKeyedBundler, make_random_keys
 
 __all__ = [
-    # Gradient prediction
-    "GradientPredictor",
-    "PredictionConfig",
-    "PredictiveTrainer",
-    # Ternary optimization
-    "TernaryConfig",
-    "TernaryGradientAccumulator",
-    "TernaryOptimizer",
-    # VSA compression
-    "VSAConfig",
-    "VSAGradientCompressor",
-    "hyperdimensional_bind",
-    "hyperdimensional_bundle",
-    "ternary_quantize",
+    # Always available (local implementations)
     "VSAKeyedBundler",
     "make_random_keys",
-    # Phase-based training
-    "PhaseConfig",
-    "PhaseTrainer",
-    "TrainingPhase",
+    "_VSA_AVAILABLE",
 ]
+
+if _VSA_AVAILABLE:
+    __all__ += [
+        # Gradient prediction
+        "GradientPredictor",
+        "PredictionConfig",
+        "PredictiveTrainer",
+        # Ternary optimization
+        "TernaryConfig",
+        "TernaryGradientAccumulator",
+        "TernaryOptimizer",
+        # VSA compression
+        "VSAConfig",
+        "VSAGradientCompressor",
+        "hyperdimensional_bind",
+        "hyperdimensional_bundle",
+        "ternary_quantize",
+        # Phase-based training
+        "PhaseConfig",
+        "PhaseTrainer",
+        "TrainingPhase",
+    ]

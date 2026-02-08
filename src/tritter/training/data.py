@@ -43,7 +43,7 @@ class DataConfig:
     seed: int = 42
 
 
-class CodeDataset(Dataset):
+class CodeDataset(Dataset):  # type: ignore[misc]
     """Dataset for loading code files.
 
     Why: Loads code from a directory or file list and tokenizes on the fly.
@@ -143,7 +143,7 @@ class CodeDataset(Dataset):
         return {"input_ids": torch.tensor(tokens, dtype=torch.long)}
 
 
-class StreamingCodeDataset(IterableDataset):
+class StreamingCodeDataset(IterableDataset):  # type: ignore[misc]
     """Streaming dataset for large code collections.
 
     Why: For datasets too large to index (e.g., Stack-Edu 1T tokens), streaming

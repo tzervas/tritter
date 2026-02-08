@@ -5,29 +5,31 @@ through VSA compression, ternary quantization, and gradient prediction.
 These tests verify correctness of each component.
 """
 
+import pytest
 import torch
 import torch.nn as nn
-import pytest
+
+pytest.importorskip("vsa_optimizer", reason="vsa-training-optimizer package not installed")
 
 from tritter.training.optimization import (
-    # VSA compression
-    VSAConfig,
-    VSAGradientCompressor,
-    hyperdimensional_bind,
-    hyperdimensional_bundle,
-    ternary_quantize,
     # Gradient prediction
     GradientPredictor,
+    # Phase-based training
+    PhaseConfig,
+    PhaseTrainer,
     PredictionConfig,
     PredictiveTrainer,
     # Ternary optimization
     TernaryConfig,
     TernaryGradientAccumulator,
     TernaryOptimizer,
-    # Phase-based training
-    PhaseConfig,
-    PhaseTrainer,
     TrainingPhase,
+    # VSA compression
+    VSAConfig,
+    VSAGradientCompressor,
+    hyperdimensional_bind,
+    hyperdimensional_bundle,
+    ternary_quantize,
 )
 
 
@@ -131,7 +133,11 @@ class TestVSACompression:
         loss.backward()
 
         # Collect gradients
-        gradients = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}
+        gradients = {
+            name: param.grad.clone()
+            for name, param in model.named_parameters()
+            if param.grad is not None
+        }
         shapes = {name: grad.shape for name, grad in gradients.items()}
 
         # Compress
@@ -219,8 +225,7 @@ class TestGradientPredictor:
         model = SimpleModel()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         trainer = PredictiveTrainer(
-            model, optimizer,
-            PredictionConfig(prediction_steps=2, history_size=3)
+            model, optimizer, PredictionConfig(prediction_steps=2, history_size=3)
         )
 
         step_types = []
@@ -298,13 +303,10 @@ class TestTernaryOptimizer:
         """Ternary optimizer should perform updates at accumulation boundary."""
         model = SimpleModel()
         base_optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-        optimizer = TernaryOptimizer(
-            model, base_optimizer,
-            TernaryConfig(accumulation_steps=4)
-        )
+        optimizer = TernaryOptimizer(model, base_optimizer, TernaryConfig(accumulation_steps=4))
 
         updates = []
-        for i in range(12):
+        for _i in range(12):
             model.zero_grad()
             x = torch.randn(4, 64)
             loss = model(x).sum()
@@ -352,7 +354,7 @@ class TestPhaseTrainer:
             return m(batch["x"]).sum()
 
         phases_seen = set()
-        for step in range(20):
+        for _step in range(20):
             batch = {"x": torch.randn(4, 64)}
             stats = trainer.train_step(batch, compute_loss)
             phases_seen.add(stats["phase"])
@@ -414,11 +416,13 @@ class TestPhaseTrainer:
 
         for _ in range(30):
             batch = {"x": torch.randn(4, 64)}
-            stats = trainer.train_step(batch, compute_loss)
+            trainer.train_step(batch, compute_loss)
 
         # Should have recorded losses
         assert len(trainer.phase_losses[TrainingPhase.FULL]) > 0, "Should have FULL phase losses"
-        assert len(trainer.phase_losses[TrainingPhase.PREDICT]) > 0, "Should have PREDICT phase losses"
+        assert len(trainer.phase_losses[TrainingPhase.PREDICT]) > 0, (
+            "Should have PREDICT phase losses"
+        )
 
 
 class TestIntegration:
@@ -443,7 +447,7 @@ class TestIntegration:
         initial_loss = None
         final_loss = None
 
-        for step in range(100):
+        for _step in range(100):
             batch = {
                 "x": torch.randn(8, 32),
                 "y": torch.randn(8, 16),

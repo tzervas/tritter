@@ -24,13 +24,13 @@ Usage:
 
 import argparse
 import json
-import os
 from pathlib import Path
 from typing import Any
 
 # Try to import huggingface_hub
 try:
     from huggingface_hub import HfApi, hf_hub_download
+
     HF_AVAILABLE = True
 except ImportError:
     HF_AVAILABLE = False
@@ -100,7 +100,11 @@ def list_hf_models(username: str = "tzervas") -> list[dict]:
     api = HfApi()
     models = api.list_models(author=username)
     return [
-        {"id": m.id, "downloads": getattr(m, 'downloads', 0), "updated": str(getattr(m, 'lastModified', ''))}
+        {
+            "id": m.id,
+            "downloads": getattr(m, "downloads", 0),
+            "updated": str(getattr(m, "lastModified", "")),
+        }
         for m in models
         if "tritter" in m.id.lower()
     ]
@@ -130,28 +134,34 @@ def format_comparison_table(results: dict[str, dict]) -> str:
 
     for model_size, variants in results.items():
         lines.append(f"\n## {model_size} Model\n")
-        lines.append(f"{'Variant':<25} {'Final Loss':>12} {'Min Loss':>12} {'Steps':>10} {'Tok/s':>12}")
+        lines.append(
+            f"{'Variant':<25} {'Final Loss':>12} {'Min Loss':>12} {'Steps':>10} {'Tok/s':>12}"
+        )
         lines.append("-" * 75)
 
         for variant_name, metrics in variants.items():
-            final_loss = metrics.get('final_loss', metrics.get('loss', 'N/A'))
-            min_loss = metrics.get('min_loss', 'N/A')
-            steps = metrics.get('total_steps', metrics.get('step', 'N/A'))
-            tok_s = metrics.get('tokens_per_second', 'N/A')
+            final_loss = metrics.get("final_loss", metrics.get("loss", "N/A"))
+            min_loss = metrics.get("min_loss", "N/A")
+            steps = metrics.get("total_steps", metrics.get("step", "N/A"))
+            tok_s = metrics.get("tokens_per_second", "N/A")
 
             # Format values
-            fl_str = f"{final_loss:.4f}" if isinstance(final_loss, (int, float)) else str(final_loss)
+            fl_str = (
+                f"{final_loss:.4f}" if isinstance(final_loss, (int, float)) else str(final_loss)
+            )
             ml_str = f"{min_loss:.4f}" if isinstance(min_loss, (int, float)) else str(min_loss)
             steps_str = f"{steps:,}" if isinstance(steps, int) else str(steps)
             tok_str = f"{tok_s:,.0f}" if isinstance(tok_s, (int, float)) else str(tok_s)
 
-            lines.append(f"{variant_name:<25} {fl_str:>12} {ml_str:>12} {steps_str:>10} {tok_str:>12}")
+            lines.append(
+                f"{variant_name:<25} {fl_str:>12} {ml_str:>12} {steps_str:>10} {tok_str:>12}"
+            )
 
         # Add backward reduction info for hybrid variants
         for variant_name, metrics in variants.items():
-            if 'backward_reduction_percent' in metrics:
-                br = metrics['backward_reduction_percent']
-                div_events = metrics.get('divergence_events', 0)
+            if "backward_reduction_percent" in metrics:
+                br = metrics["backward_reduction_percent"]
+                div_events = metrics.get("divergence_events", 0)
                 if isinstance(div_events, list):
                     div_events = len(div_events)
                 lines.append(f"\n  {variant_name}:")
@@ -166,9 +176,12 @@ def main():
     parser.add_argument("--local", action="store_true", help="Compare local checkpoints")
     parser.add_argument("--hf", action="store_true", help="Compare HuggingFace models")
     parser.add_argument("--all", action="store_true", help="Full comparison")
-    parser.add_argument("--checkpoint-dir", type=Path,
-                        default=Path("/home/kang/Documents/projects/github/python-ai/tritter/checkpoints"),
-                        help="Local checkpoint directory")
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        default=Path("/home/kang/Documents/projects/github/python-ai/tritter/checkpoints"),
+        help="Local checkpoint directory",
+    )
     parser.add_argument("--output", type=Path, default=None, help="Output file for report")
 
     args = parser.parse_args()

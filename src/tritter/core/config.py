@@ -12,7 +12,7 @@ at config creation time rather than runtime during training, saving compute time
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from tritter.core.model_specs import HardwareRecommendation, MemoryEstimate, ModelSpec
@@ -74,13 +74,16 @@ class TritterConfig:
     """
 
     # Model architecture
-    model_size: Literal["test", "125M", "350M", "1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"] = "3B"
+    model_size: Literal[
+        "test", "125M", "350M", "1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"
+    ] = "3B"
     hidden_size: int = 2048
     num_layers: int = 24
     num_heads: int = 16
     num_kv_heads: int | None = None  # None = MHA, set for GQA
     intermediate_size: int = 8192
     max_position_embeddings: int = 131072  # 128K context
+    rope_theta: float = 500000.0  # RoPE base frequency (extended for 128K context)
     vocab_size: int = 65536
 
     # BitNet quantization
@@ -386,7 +389,10 @@ class TritterConfig:
 
         # Apply max_position_embeddings from spec if different
         default_max_pos = 131072
-        if self.max_position_embeddings == default_max_pos and spec.max_position_embeddings != default_max_pos:
+        if (
+            self.max_position_embeddings == default_max_pos
+            and spec.max_position_embeddings != default_max_pos
+        ):
             self.max_position_embeddings = spec.max_position_embeddings
 
         # Auto-enable layer streaming for large models if not explicitly set
@@ -508,10 +514,24 @@ class TritterConfig:
         vocab_size: int = 65536,
         max_position_embeddings: int = 131072,
         # Model size reference (optional, for sensible defaults)
-        model_size: Literal["test", "125M", "350M", "1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"]
+        model_size: Literal[
+            "test",
+            "125M",
+            "350M",
+            "1B",
+            "3B",
+            "7B",
+            "10B",
+            "13B",
+            "30B",
+            "33B",
+            "40B",
+            "65B",
+            "70B",
+        ]
         | None = None,
         # All other config parameters can be overridden
-        **kwargs,
+        **kwargs: Any,
     ) -> TritterConfig:
         """Create a research configuration with full manual control over architecture.
 

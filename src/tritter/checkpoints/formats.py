@@ -88,7 +88,7 @@ def save_checkpoint(
         # Progressive format handled in progressive.py
         from tritter.checkpoints.progressive import save_progressive
 
-        return save_progressive(model, path, metadata)
+        return save_progressive(model, path, metadata)  # type: ignore[arg-type]
     else:
         raise ValueError(f"Unknown format: {format}")
 
@@ -115,7 +115,7 @@ def load_checkpoint(
         if (path / "progressive.json").exists():
             from tritter.checkpoints.progressive import load_progressive
 
-            return load_progressive(path, device)
+            return load_progressive(path, device)  # type: ignore[return-value]
         elif (path / "weights.safetensors").exists():
             return _load_safetensors(path / "weights.safetensors", device)
 
@@ -382,7 +382,7 @@ def _write_gguf(
         raise ValueError(f"Unknown quantization: {quantization}")
 
     # Build metadata key-value pairs
-    kv_pairs = []
+    kv_pairs: list[tuple[str, str | int]] = []
     if metadata:
         kv_pairs.append(("general.architecture", "tritter"))
         kv_pairs.append(("general.name", f"tritter-{metadata.model_size}"))

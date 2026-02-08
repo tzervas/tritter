@@ -328,6 +328,7 @@ class TestApplyLoRA:
 
         Why: Should correctly identify and wrap target modules.
         """
+
         class SimpleModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -355,6 +356,7 @@ class TestApplyLoRA:
 
         Why: Real models have nested modules (layers.0.attention.q_proj).
         """
+
         class Attention(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -389,6 +391,7 @@ class TestApplyLoRA:
 
         Why: Only LoRA params should be trainable for memory efficiency.
         """
+
         class SimpleModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -416,6 +419,7 @@ class TestParameterCounting:
 
         Why: Accurate counts needed for memory estimation.
         """
+
         class SimpleModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -442,6 +446,7 @@ class TestParameterCounting:
 
         Why: For optimizer, we only want LoRA parameters.
         """
+
         class SimpleModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -466,6 +471,7 @@ class TestParameterCounting:
 
         Why: More general than get_lora_parameters.
         """
+
         class SimpleModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -489,6 +495,7 @@ class TestSaveLoad:
 
         Why: Adapters must be loadable for deployment and resumption.
         """
+
         class SimpleModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -528,6 +535,7 @@ class TestSaveLoad:
 
         Why: Config needed to reconstruct model for loading.
         """
+
         class SimpleModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -555,6 +563,7 @@ class TestMergeWeights:
 
         Why: For deployment, merge eliminates LoRA overhead.
         """
+
         class SimpleModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -626,6 +635,7 @@ class TestLoRATrainer:
 
         Why: Trainer should initialize with only trainable params in optimizer.
         """
+
         class SimpleModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -646,6 +656,7 @@ class TestLoRATrainer:
 
         Why: Checkpointing needed for training resumption.
         """
+
         class SimpleModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -685,6 +696,7 @@ class TestQLoRA:
 
         Why: QLoRA requires LoRA adapters on quantized weights.
         """
+
         class QuantizedModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -735,6 +747,7 @@ class TestQLoRA:
 
         Why: Verify gradients flow correctly with quantized base.
         """
+
         class QuantizedModel(nn.Module):
             def __init__(self) -> None:
                 super().__init__()

@@ -79,7 +79,7 @@ class VQRouterConfig:
     epsilon: float = 1e-5
 
 
-class VQRouter(nn.Module):
+class VQRouter(nn.Module):  # type: ignore[misc]
     """Vector Quantization router with learned codebook.
 
     Why: Provides a learned discretization layer that maps continuous embeddings
@@ -369,7 +369,7 @@ class VQRouter(nn.Module):
         entropy = -(probs * log_probs).sum()
 
         # Perplexity = exp(entropy)
-        return torch.exp(entropy).item()
+        return torch.exp(entropy).item()  # type: ignore[no-any-return]
 
 
 __all__ = [

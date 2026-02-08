@@ -23,12 +23,12 @@ from tritter.vision.siglip import (
     create_siglip_encoder,
 )
 from tritter.vision.vqvae import (
-    VQVAEConfig,
-    VQVAEEncoder,
-    VQVAEDecoder,
-    VectorQuantizer,
-    VQVAEImageTokenizer,
     ImageProjection,
+    VectorQuantizer,
+    VQVAEConfig,
+    VQVAEDecoder,
+    VQVAEEncoder,
+    VQVAEImageTokenizer,
     create_vqvae_tokenizer,
 )
 

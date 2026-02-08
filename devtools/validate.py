@@ -243,7 +243,7 @@ class ValidationRunner:
         for step in steps:
             runner = step_runners.get(step)
             if runner:
-                step_result = runner()
+                step_result = runner()  # type: ignore[no-untyped-call]
                 result.steps.append(step_result)
 
         return result

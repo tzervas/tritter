@@ -23,7 +23,6 @@ Test coverage:
 
 import pytest
 import torch
-import torch.nn.functional as F
 
 from tritter.core.config import TritterConfig
 from tritter.embedding.knn_rounding import (
@@ -253,7 +252,9 @@ class TestKNNRouter:
         vocab_embeddings = torch.randn(100, 64)
 
         # Cosine similarity (normalize=True)
-        router_cosine = KNNRouter(vocab_embeddings, KNNRouterConfig(normalize=True, use_faiss=False))
+        router_cosine = KNNRouter(
+            vocab_embeddings, KNNRouterConfig(normalize=True, use_faiss=False)
+        )
 
         # L2 distance (normalize=False)
         router_l2 = KNNRouter(vocab_embeddings, KNNRouterConfig(normalize=False, use_faiss=False))
@@ -998,7 +999,7 @@ class TestEdgeCases:
         embeddings = torch.randn(2, 10, 256)
 
         # KNN outputs
-        knn_tokens = knn_router(embeddings)
+        knn_router(embeddings)
         knn_probs = knn_router.forward_soft(embeddings)
         assert torch.isfinite(knn_probs).all()
 
@@ -1061,7 +1062,6 @@ class TestIntegrationWithEmbeddings:
 
         Why: VQ learns its own representation.
         """
-        vocab_size = 1000
         codebook_size = 512
         embedding_dim = 256
 

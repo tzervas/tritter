@@ -31,24 +31,20 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
-import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.amp import GradScaler, autocast
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
 
 # Try to import transformers for GPT-2
 try:
-    from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+    from transformers import GPT2LMHeadModel, GPT2Tokenizer
+
     HF_AVAILABLE = True
 except ImportError:
     HF_AVAILABLE = False
@@ -57,6 +53,7 @@ except ImportError:
 # Try to import datasets for WikiText
 try:
     from datasets import load_dataset
+
     DATASETS_AVAILABLE = True
 except ImportError:
     DATASETS_AVAILABLE = False
@@ -66,6 +63,7 @@ except ImportError:
 # =============================================================================
 # Dataset Wrapper
 # =============================================================================
+
 
 class WikiTextDataset(Dataset):
     """WikiText-103 dataset wrapper."""
@@ -92,7 +90,7 @@ class WikiTextDataset(Dataset):
         # Create chunks of max_length
         self.chunks = []
         for i in range(0, len(all_tokens) - max_length, max_length):
-            self.chunks.append(all_tokens[i:i + max_length])
+            self.chunks.append(all_tokens[i : i + max_length])
 
         print(f"Created {len(self.chunks)} chunks of {max_length} tokens")
 
@@ -109,6 +107,7 @@ class WikiTextDataset(Dataset):
 # =============================================================================
 # Benchmark Configuration
 # =============================================================================
+
 
 @dataclass
 class BenchmarkConfig:
@@ -139,6 +138,7 @@ class BenchmarkConfig:
 # =============================================================================
 # Simple Phase Controller (Standalone)
 # =============================================================================
+
 
 class SimplePhaseController:
     """Simplified phase controller for benchmark."""
@@ -209,9 +209,9 @@ class SimplePhaseController:
             grads = [h[key] for h in self.grad_history[-5:] if key in h]
             if grads:
                 # Exponential moving average
-                weights = [0.5 ** i for i in range(len(grads) - 1, -1, -1)]
+                weights = [0.5**i for i in range(len(grads) - 1, -1, -1)]
                 total_weight = sum(weights)
-                avg = sum(g * w for g, w in zip(grads, weights)) / total_weight
+                avg = sum(g * w for g, w in zip(grads, weights, strict=False)) / total_weight
                 result[key] = avg
 
         return result
@@ -220,6 +220,7 @@ class SimplePhaseController:
 # =============================================================================
 # Training Functions
 # =============================================================================
+
 
 def train_hybrid(model, dataloader, config: BenchmarkConfig, device) -> dict:
     """Train using hybrid methodology."""
@@ -283,11 +284,16 @@ def train_hybrid(model, dataloader, config: BenchmarkConfig, device) -> dict:
             else:
                 loss.backward()
 
-            grad_norm = sum(p.grad.norm().item() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5
+            grad_norm = (
+                sum(p.grad.norm().item() ** 2 for p in model.parameters() if p.grad is not None)
+                ** 0.5
+            )
 
             if math.isfinite(grad_norm):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                gradients = {n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None}
+                gradients = {
+                    n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None
+                }
 
                 if scaler is not None:
                     scaler.step(optimizer)
@@ -323,9 +329,11 @@ def train_hybrid(model, dataloader, config: BenchmarkConfig, device) -> dict:
             tokens_per_sec = total_tokens / elapsed
             skip_pct = (1 - backward_passes / forward_passes) * 100
 
-            print(f"Step {step:>5} | Phase: {phase:<8} | Loss: {loss_value:.4f} | "
-                  f"Tok/s: {tokens_per_sec:,.0f} | Skip: {skip_pct:.1f}% | "
-                  f"Remaining: {remaining/60:.1f}m")
+            print(
+                f"Step {step:>5} | Phase: {phase:<8} | Loss: {loss_value:.4f} | "
+                f"Tok/s: {tokens_per_sec:,.0f} | Skip: {skip_pct:.1f}% | "
+                f"Remaining: {remaining / 60:.1f}m"
+            )
 
     total_time = time.time() - start_time
     return {
@@ -334,7 +342,7 @@ def train_hybrid(model, dataloader, config: BenchmarkConfig, device) -> dict:
         "total_tokens": total_tokens,
         "total_time": total_time,
         "final_loss": loss_history[-1][1] if loss_history else 0,
-        "min_loss": min(l[1] for l in loss_history) if loss_history else 0,
+        "min_loss": min(entry[1] for entry in loss_history) if loss_history else 0,
         "backward_passes": backward_passes,
         "forward_passes": forward_passes,
         "backward_reduction": (1 - backward_passes / forward_passes) * 100,
@@ -394,7 +402,9 @@ def train_full(model, dataloader, config: BenchmarkConfig, device) -> dict:
         else:
             loss.backward()
 
-        grad_norm = sum(p.grad.norm().item() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5
+        grad_norm = (
+            sum(p.grad.norm().item() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5
+        )
         if not math.isfinite(grad_norm):
             if scaler is not None:
                 scaler.update()
@@ -418,8 +428,10 @@ def train_full(model, dataloader, config: BenchmarkConfig, device) -> dict:
             remaining = config.max_time_seconds - elapsed
             tokens_per_sec = total_tokens / elapsed
 
-            print(f"Step {step:>5} | Loss: {loss_value:.4f} | "
-                  f"Tok/s: {tokens_per_sec:,.0f} | Remaining: {remaining/60:.1f}m")
+            print(
+                f"Step {step:>5} | Loss: {loss_value:.4f} | "
+                f"Tok/s: {tokens_per_sec:,.0f} | Remaining: {remaining / 60:.1f}m"
+            )
 
     total_time = time.time() - start_time
     return {
@@ -428,7 +440,7 @@ def train_full(model, dataloader, config: BenchmarkConfig, device) -> dict:
         "total_tokens": total_tokens,
         "total_time": total_time,
         "final_loss": loss_history[-1][1] if loss_history else 0,
-        "min_loss": min(l[1] for l in loss_history) if loss_history else 0,
+        "min_loss": min(entry[1] for entry in loss_history) if loss_history else 0,
         "backward_passes": step,
         "forward_passes": step,
         "backward_reduction": 0.0,
@@ -459,6 +471,7 @@ def evaluate_perplexity(model, dataloader, device) -> float:
 # =============================================================================
 # Main Benchmark
 # =============================================================================
+
 
 def run_benchmark(config: BenchmarkConfig):
     """Run full benchmark comparison."""

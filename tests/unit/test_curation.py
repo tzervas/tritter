@@ -19,20 +19,15 @@ Testing Strategy:
   secrets -> rejected)
 """
 
-import pytest
-
 from tritter.curation import (
-    DATASKETCH_AVAILABLE,
     CuratedSample,
     CurationPipeline,
     MinHashDeduplicator,
     MinHashSignature,
     QualityAnalyzer,
     QualityMetadata,
-    QualityMetrics,
     SecretMatch,
     SecretScanner,
-    SecurityIssue,
     SecurityScanner,
     SourceMetadata,
 )
@@ -64,11 +59,11 @@ class TestSecretScanner:
         """
         scanner = SecretScanner()
 
-        code = '''
+        code = """
 config = {
     "token": "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456789012"
 }
-'''
+"""
         assert scanner.has_secrets(code)
         matches = scanner.scan(code)
         assert len(matches) == 1
@@ -83,10 +78,10 @@ config = {
         """
         scanner = SecretScanner()
 
-        code = '''
+        code = """
 import openai
 openai.api_key = "sk-abcdefghijklmnopqrstuvwxyz123456789012345678901234"
-'''
+"""
         assert scanner.has_secrets(code)
         matches = scanner.scan(code)
         assert any(m.pattern_name == "openai_key" for m in matches)
@@ -98,9 +93,9 @@ openai.api_key = "sk-abcdefghijklmnopqrstuvwxyz123456789012345678901234"
         """
         scanner = SecretScanner()
 
-        code = '''
+        code = """
 AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
-'''
+"""
         assert scanner.has_secrets(code)
         matches = scanner.scan(code)
         assert any(m.pattern_name == "aws_key_id" for m in matches)
@@ -112,9 +107,9 @@ AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
         """
         scanner = SecretScanner()
 
-        code = '''
+        code = """
 api_key = "test_fake_key_abcdefghijklmnop1234567890"
-'''
+"""
         assert scanner.has_secrets(code)
         matches = scanner.scan(code)
         assert any(m.pattern_name == "generic_api_key" for m in matches)
@@ -126,9 +121,9 @@ api_key = "test_fake_key_abcdefghijklmnop1234567890"
         """
         scanner = SecretScanner()
 
-        code = '''
+        code = """
 password = "supersecretpassword123"
-'''
+"""
         assert scanner.has_secrets(code)
         matches = scanner.scan(code)
         assert any(m.pattern_name == "generic_secret" for m in matches)
@@ -140,9 +135,9 @@ password = "supersecretpassword123"
         """
         scanner = SecretScanner()
 
-        code = '''
+        code = """
 headers = {"Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"}
-'''
+"""
         assert scanner.has_secrets(code)
         matches = scanner.scan(code)
         assert any(m.pattern_name == "bearer_token" for m in matches)
@@ -174,12 +169,12 @@ MIIEowIBAAKCAQEA...
         scanner = SecretScanner()
 
         # Placeholder patterns that look like secrets but aren't
-        code = '''
+        code = """
 # Configure your API key
 api_key = os.environ.get("API_KEY")
 github_token = os.getenv("GITHUB_TOKEN")
 password = input("Enter password: ")
-'''
+"""
         # Should not detect these as secrets
         matches = scanner.scan(code)
         # May match password due to "Enter password" string, but core env lookups are safe
@@ -194,11 +189,11 @@ password = input("Enter password: ")
         """
         scanner = SecretScanner()
 
-        code = '''
+        code = """
 api = "test"
 key = "value"
 sk = "short"
-'''
+"""
         assert not scanner.has_secrets(code)
 
     def test_line_number_tracking(self) -> None:
@@ -208,11 +203,11 @@ sk = "short"
         """
         scanner = SecretScanner()
 
-        code = '''line1
+        code = """line1
 line2
 api_key = "sk_test_abcdefghijklmnopqrst"
 line4
-'''
+"""
         matches = scanner.scan(code)
         assert len(matches) > 0
         # Secret is on line 3
@@ -267,10 +262,10 @@ class TestSecurityScanner:
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 def process(data):
     return eval(data)
-'''
+"""
         issues = scanner.scan(code, "python")
         assert len(issues) > 0
         assert any(i.issue_type == "code_injection" for i in issues)
@@ -283,9 +278,9 @@ def process(data):
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 exec(user_input)
-'''
+"""
         issues = scanner.scan(code, "python")
         assert any(i.pattern_name == "exec_usage" for i in issues)
         assert any(i.severity == "critical" for i in issues)
@@ -297,10 +292,10 @@ exec(user_input)
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 import subprocess
 subprocess.run(command, shell=True)
-'''
+"""
         issues = scanner.scan(code, "python")
         assert any(i.pattern_name == "subprocess_shell" for i in issues)
         assert any(i.severity == "high" for i in issues)
@@ -312,10 +307,10 @@ subprocess.run(command, shell=True)
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 import pickle
 data = pickle.load(file)
-'''
+"""
         issues = scanner.scan(code, "python")
         assert any(i.pattern_name == "pickle_load" for i in issues)
 
@@ -326,10 +321,10 @@ data = pickle.load(file)
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 import yaml
 data = yaml.load(content)
-'''
+"""
         issues = scanner.scan(code, "python")
         assert any("yaml" in i.pattern_name for i in issues)
 
@@ -340,13 +335,13 @@ data = yaml.load(content)
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 fn risky() {
     unsafe {
         ptr::read(addr)
     }
 }
-'''
+"""
         issues = scanner.scan(code, "rust")
         assert any(i.pattern_name == "unsafe_block" for i in issues)
 
@@ -357,11 +352,11 @@ fn risky() {
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 fn get_value() -> i32 {
     some_result.unwrap()
 }
-'''
+"""
         issues = scanner.scan(code, "rust")
         assert any(i.pattern_name == "unwrap_usage" for i in issues)
 
@@ -372,11 +367,11 @@ fn get_value() -> i32 {
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 @triton.jit
 def kernel(ptr):
     data = tl.load(ptr)  # No mask!
-'''
+"""
         issues = scanner.scan(code, "triton")
         # Should detect missing mask
         assert any(i.pattern_name == "unmasked_load" for i in issues)
@@ -388,9 +383,9 @@ def kernel(ptr):
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 BLOCK_SIZE = 100000  # Too big!
-'''
+"""
         issues = scanner.scan(code, "triton")
         assert any(i.pattern_name == "excessive_block_size" for i in issues)
 
@@ -401,10 +396,10 @@ BLOCK_SIZE = 100000  # Too big!
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 result = eval(input())
 data = pickle.load(file)
-'''
+"""
         issues = scanner.scan(code, "python")
         for issue in issues:
             assert issue.recommendation, f"Issue {issue.pattern_name} missing recommendation"
@@ -428,11 +423,11 @@ data = pickle.load(file)
         """
         scanner = SecurityScanner()
 
-        code = '''
+        code = """
 eval(x)
 exec(y)
 subprocess.run(cmd, shell=True)
-'''
+"""
         issues = scanner.scan(code, "python")
         counts = scanner.get_severity_counts(issues)
 
@@ -458,9 +453,9 @@ class TestQualityAnalyzer:
         """Test basic line counting."""
         analyzer = QualityAnalyzer()
 
-        code = '''line1
+        code = """line1
 line2
-line3'''
+line3"""
         metrics = analyzer.analyze(code, "python")
         assert metrics.line_count == 3
 
@@ -471,7 +466,7 @@ line3'''
         """
         analyzer = QualityAnalyzer()
 
-        code = '''
+        code = """
 def foo():
     pass
 
@@ -480,7 +475,7 @@ def bar():
 
 async def baz():
     pass
-'''
+"""
         metrics = analyzer.analyze(code, "python")
         assert metrics.function_count == 3
 
@@ -488,13 +483,13 @@ async def baz():
         """Test class detection in Python code."""
         analyzer = QualityAnalyzer()
 
-        code = '''
+        code = """
 class Foo:
     pass
 
 class Bar:
     pass
-'''
+"""
         metrics = analyzer.analyze(code, "python")
         assert metrics.class_count == 2
 
@@ -524,7 +519,7 @@ def undocumented():
         """
         analyzer = QualityAnalyzer(max_nesting_depth=3)
 
-        code = '''
+        code = """
 def deep():
     if True:
         for i in range(10):
@@ -532,7 +527,7 @@ def deep():
                 if False:
                     if True:
                         pass
-'''
+"""
         metrics = analyzer.analyze(code, "python")
         assert metrics.max_nesting_depth > 3
         # Should have issue for deep nesting
@@ -545,13 +540,13 @@ def deep():
         """
         analyzer = QualityAnalyzer(magic_number_threshold=10)
 
-        code = '''
+        code = """
 def calculate():
     x = 42 * 100  # Magic!
     y = 12345
     z = 98765
     return x + y + z
-'''
+"""
         metrics = analyzer.analyze(code, "python")
         assert metrics.magic_number_count > 0
 
@@ -559,10 +554,10 @@ def calculate():
         """Test long line detection."""
         analyzer = QualityAnalyzer(max_line_length=80)
 
-        code = f'''
+        code = f"""
 short_line = "hello"
 {"long_line = " + "x" * 100}
-'''
+"""
         metrics = analyzer.analyze(code, "python")
         assert metrics.long_line_count > 0
 
@@ -623,7 +618,7 @@ class Calculator:
         analyzer = QualityAnalyzer()
 
         # Code with many quality issues
-        code = '''
+        code = """
 def f():
     x=42*3.14159265359*100000+99999*88888*77777*66666
     if True:
@@ -633,7 +628,7 @@ def f():
                     if True:
                         if True:
                             pass
-'''
+"""
         metrics = analyzer.analyze(code, "python")
         # Bad code should score poorly
         assert metrics.overall_score < 0.8
@@ -647,12 +642,12 @@ def f():
         """
         analyzer = QualityAnalyzer()
 
-        code = '''
+        code = """
 fn main() {
     let x = 42;
     println!("{}", x);
 }
-'''
+"""
         metrics = analyzer.analyze(code, "rust")
         # Should still compute basic metrics
         assert metrics.line_count > 0
@@ -665,10 +660,10 @@ fn main() {
         """
         analyzer = QualityAnalyzer()
 
-        code = '''
+        code = """
 def broken(
     missing_close_paren
-'''
+"""
         # Should not crash
         metrics = analyzer.analyze(code, "python")
         assert metrics.line_count > 0
@@ -790,7 +785,7 @@ class TestMinHashDeduplicator:
         sig1 = dedup_strict.compute_signature(text1)
         sig2 = dedup_strict.compute_signature(text2)
         # May not be duplicate with strict threshold
-        strict_result = dedup_strict.is_duplicate(sig1, sig2)
+        dedup_strict.is_duplicate(sig1, sig2)
 
         # Loose threshold
         dedup_loose = MinHashDeduplicator(threshold=0.5)
@@ -880,11 +875,11 @@ def multiply_numbers(x: int, y: int) -> int:
         """
         pipeline = CurationPipeline()
 
-        code = '''
+        code = """
 def connect():
     api_key = "sk-abcdefghijklmnopqrstuvwxyz123456789012345678901234"
     return api_key
-'''
+"""
         result = pipeline.process(code, "python")
 
         # Must be rejected
@@ -929,7 +924,7 @@ def run_command(cmd):
         pipeline = CurationPipeline(quality_threshold=0.6)
 
         # Code with many quality issues
-        code = '''
+        code = """
 def f():
     x=42*3.14159265359*100000
     if True:
@@ -943,7 +938,7 @@ def g():
     pass
 def h():
     pass
-'''
+"""
         result = pipeline.process(code, "python")
 
         # May be negative due to quality issues
@@ -1011,11 +1006,11 @@ def hello():
         """
         pipeline = CurationPipeline()
 
-        code = '''
+        code = """
 def dangerous():
     eval(input())
     pickle.load(open('data.pkl'))
-'''
+"""
         result = pipeline.process(code, "python")
 
         assert result.quality_label == "negative"
@@ -1087,7 +1082,15 @@ class TestSchemaClasses:
             "language": "python",
             "quality_label": "negative",
             "quality_score": 0.3,
-            "security_issues": [{"type": "code_injection", "severity": "critical", "line": 1, "message": "eval usage", "recommendation": "Use ast.literal_eval"}],
+            "security_issues": [
+                {
+                    "type": "code_injection",
+                    "severity": "critical",
+                    "line": 1,
+                    "message": "eval usage",
+                    "recommendation": "Use ast.literal_eval",
+                }
+            ],
             "quality_issues": ["deep nesting"],
             "anti_patterns": ["deep_nesting"],
             "explanation": "Has issues",

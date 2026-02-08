@@ -93,7 +93,7 @@ class MemoryManager:
             self.budget_bytes = int(effective_budget_gb * 1024**3)
         else:
             self.budget_bytes = int(config.gpu_memory_budget_gb * 1024**3)
-            self._system_info = None
+            self._system_info = None  # type: ignore[assignment]
             self._budget_adjusted = False
             self._original_budget_gb = config.gpu_memory_budget_gb
 
@@ -108,7 +108,7 @@ class MemoryManager:
         Returns:
             Dictionary with budget details including OS overhead info
         """
-        info = {
+        info: dict[str, float | str | bool] = {
             "budget_gb": self.budget_gb,
             "budget_adjusted": self._budget_adjusted,
             "original_budget_gb": self._original_budget_gb,

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 @dataclass
 class QualityIssue:
     """Represents a detected quality issue."""
+
     issue_type: str
     severity: str  # "high", "medium", "low"
     location: str  # e.g., "line 42" or "function foo"
@@ -29,6 +30,7 @@ class QualityIssue:
 @dataclass
 class QualityResult:
     """Result of quality analysis."""
+
     quality_score: float = 1.0  # 0.0 to 1.0
     issues: list[QualityIssue] = field(default_factory=list)
     metrics: dict = field(default_factory=dict)
@@ -270,16 +272,13 @@ class QualityAnalyzer:
 
     def __init__(self) -> None:
         self._python_patterns = [
-            (re.compile(pattern, re.MULTILINE), *rest)
-            for pattern, *rest in PYTHON_ANTIPATTERNS
+            (re.compile(pattern, re.MULTILINE), *rest) for pattern, *rest in PYTHON_ANTIPATTERNS
         ]
         self._rust_patterns = [
-            (re.compile(pattern, re.MULTILINE), *rest)
-            for pattern, *rest in RUST_ANTIPATTERNS
+            (re.compile(pattern, re.MULTILINE), *rest) for pattern, *rest in RUST_ANTIPATTERNS
         ]
         self._triton_patterns = [
-            (re.compile(pattern, re.MULTILINE), *rest)
-            for pattern, *rest in TRITON_ANTIPATTERNS
+            (re.compile(pattern, re.MULTILINE), *rest) for pattern, *rest in TRITON_ANTIPATTERNS
         ]
 
     def analyze(self, content: str, language: str = "python") -> QualityResult:
@@ -312,14 +311,20 @@ class QualityAnalyzer:
         for pattern, name, description, suggestion, penalty in patterns:
             matches = list(pattern.finditer(content))
             for match in matches:
-                line_num = content[:match.start()].count("\n") + 1
-                result.issues.append(QualityIssue(
-                    issue_type=name,
-                    severity="high" if penalty > 0.15 else "medium" if penalty > 0.08 else "low",
-                    location=f"line {line_num}",
-                    description=description,
-                    suggestion=suggestion,
-                ))
+                line_num = content[: match.start()].count("\n") + 1
+                result.issues.append(
+                    QualityIssue(
+                        issue_type=name,
+                        severity="high"
+                        if penalty > 0.15
+                        else "medium"
+                        if penalty > 0.08
+                        else "low",
+                        location=f"line {line_num}",
+                        description=description,
+                        suggestion=suggestion,
+                    )
+                )
                 total_penalty += penalty
 
         # Metric-based penalties
@@ -328,41 +333,47 @@ class QualityAnalyzer:
         # Complexity penalty
         if metrics.get("avg_line_length", 0) > 100:
             total_penalty += 0.1
-            result.issues.append(QualityIssue(
-                issue_type="long_lines",
-                severity="low",
-                location="multiple",
-                description="Average line length exceeds 100 characters.",
-                suggestion="Break long lines for readability. Use intermediate variables.",
-            ))
+            result.issues.append(
+                QualityIssue(
+                    issue_type="long_lines",
+                    severity="low",
+                    location="multiple",
+                    description="Average line length exceeds 100 characters.",
+                    suggestion="Break long lines for readability. Use intermediate variables.",
+                )
+            )
 
         # Deep nesting penalty (rough heuristic)
-        max_indent = max(
-            (len(line) - len(line.lstrip())) // 4
-            for line in lines
-            if line.strip()
-        ) if lines else 0
+        max_indent = (
+            max((len(line) - len(line.lstrip())) // 4 for line in lines if line.strip())
+            if lines
+            else 0
+        )
 
         if max_indent > 5:
             total_penalty += 0.15
-            result.issues.append(QualityIssue(
-                issue_type="deep_nesting",
-                severity="high",
-                location="multiple",
-                description=f"Code has deep nesting (max indent level: {max_indent}).",
-                suggestion="Extract nested logic into separate functions. Use early returns.",
-            ))
+            result.issues.append(
+                QualityIssue(
+                    issue_type="deep_nesting",
+                    severity="high",
+                    location="multiple",
+                    description=f"Code has deep nesting (max indent level: {max_indent}).",
+                    suggestion="Extract nested logic into separate functions. Use early returns.",
+                )
+            )
 
         # Long file penalty
         if metrics.get("total_lines", 0) > 500:
             total_penalty += 0.1
-            result.issues.append(QualityIssue(
-                issue_type="long_file",
-                severity="medium",
-                location="file",
-                description=f"File has {metrics['total_lines']} lines.",
-                suggestion="Consider splitting into multiple modules for maintainability.",
-            ))
+            result.issues.append(
+                QualityIssue(
+                    issue_type="long_file",
+                    severity="medium",
+                    location="file",
+                    description=f"File has {metrics['total_lines']} lines.",
+                    suggestion="Consider splitting into multiple modules for maintainability.",
+                )
+            )
 
         # Compute final score
         result.quality_score = max(0.0, 1.0 - total_penalty)
@@ -379,18 +390,19 @@ class QualityAnalyzer:
 
     def _compute_metrics(self, content: str, lines: list[str]) -> dict:
         """Compute basic code metrics."""
-        non_empty_lines = [l for l in lines if l.strip()]
+        non_empty_lines = [line for line in lines if line.strip()]
 
         return {
             "total_lines": len(lines),
             "code_lines": len(non_empty_lines),
             "blank_lines": len(lines) - len(non_empty_lines),
             "avg_line_length": (
-                sum(len(l) for l in non_empty_lines) / len(non_empty_lines)
-                if non_empty_lines else 0
+                sum(len(line) for line in non_empty_lines) / len(non_empty_lines)
+                if non_empty_lines
+                else 0
             ),
-            "max_line_length": max((len(l) for l in lines), default=0),
-            "comment_lines": sum(1 for l in lines if l.strip().startswith("#")),
+            "max_line_length": max((len(line) for line in lines), default=0),
+            "comment_lines": sum(1 for line in lines if line.strip().startswith("#")),
         }
 
     def format_negative_example(self, content: str, result: QualityResult) -> dict:
@@ -429,7 +441,7 @@ def calculate_total(items: list[float]) -> float:
     return sum(items)
 '''
 
-    test_code_bad = '''
+    test_code_bad = """
 from os import *
 
 def process(data):
@@ -444,7 +456,7 @@ def process(data):
         pass
     print(result)
     return result
-'''
+"""
 
     analyzer = QualityAnalyzer()
 

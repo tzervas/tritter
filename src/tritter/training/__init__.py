@@ -71,18 +71,21 @@ from tritter.training.lora import (
     merge_lora_weights,
     save_lora_adapters,
 )
-from tritter.training.optimization import (
-    GradientPredictor,
-    PhaseConfig,
-    PhaseTrainer,
-    PredictionConfig,
-    TernaryConfig,
-    TernaryGradientAccumulator,
-    TernaryOptimizer,
-    TrainingPhase,
-    VSAConfig,
-    VSAGradientCompressor,
-)
+from tritter.training.optimization import _VSA_AVAILABLE
+
+if _VSA_AVAILABLE:
+    from tritter.training.optimization import (
+        GradientPredictor,
+        PhaseConfig,
+        PhaseTrainer,
+        PredictionConfig,
+        TernaryConfig,
+        TernaryGradientAccumulator,
+        TernaryOptimizer,
+        TrainingPhase,
+        VSAConfig,
+        VSAGradientCompressor,
+    )
 from tritter.training.trainer import Trainer, TrainingConfig, TrainingMetrics, TrainingProgress
 
 
@@ -162,18 +165,22 @@ __all__ = [
     "load_lora_adapters",
     "merge_lora_weights",
     "save_lora_adapters",
-    # Optimization (extractable sub-module)
-    "GradientPredictor",
-    "PhaseConfig",
-    "PhaseTrainer",
-    "PredictionConfig",
-    "TernaryConfig",
-    "TernaryGradientAccumulator",
-    "TernaryOptimizer",
-    "TrainingPhase",
-    "VSAConfig",
-    "VSAGradientCompressor",
 ]
+
+# Optimization (extractable sub-module, requires vsa-training-optimizer)
+if _VSA_AVAILABLE:
+    __all__ += [
+        "GradientPredictor",
+        "PhaseConfig",
+        "PhaseTrainer",
+        "PredictionConfig",
+        "TernaryConfig",
+        "TernaryGradientAccumulator",
+        "TernaryOptimizer",
+        "TrainingPhase",
+        "VSAConfig",
+        "VSAGradientCompressor",
+    ]
 
 # TODO: Phase 6 - Export EmbeddingPredictionLoss and CurriculumScheduler
 # These classes are stub implementations that raise NotImplementedError.

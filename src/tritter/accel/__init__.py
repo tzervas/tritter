@@ -30,12 +30,26 @@ if TYPE_CHECKING:
 try:
     from tritter_accel import (
         compress_gradients_vsa as _rust_compress_vsa,
+    )
+    from tritter_accel import (
         cuda_available,
+    )
+    from tritter_accel import (
         decompress_gradients_vsa as _rust_decompress_vsa,
+    )
+    from tritter_accel import (
         pack_ternary_weights as _rust_pack,
+    )
+    from tritter_accel import (
         quantize_weights_absmean as _rust_quantize,
+    )
+    from tritter_accel import (
         ternary_matmul as _rust_matmul,
+    )
+    from tritter_accel import (
         unpack_ternary_weights as _rust_unpack,
+    )
+    from tritter_accel import (
         version as rust_version,
     )
 
@@ -63,7 +77,7 @@ def pack_ternary_weights(
     larger models to fit in VRAM. The packing is lossless.
     """
     if ACCEL_AVAILABLE:
-        return _rust_pack(ternary_weights, scales)
+        return _rust_pack(ternary_weights, scales)  # type: ignore[no-any-return]
     else:
         return _python_pack_ternary(ternary_weights, scales)
 
@@ -131,7 +145,7 @@ def quantize_weights_absmean(
     computing scale = mean(|weights|) per output channel.
     """
     if ACCEL_AVAILABLE:
-        return _rust_quantize(weights)
+        return _rust_quantize(weights)  # type: ignore[no-any-return]
     else:
         return _python_quantize_absmean(weights)
 

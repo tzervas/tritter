@@ -155,7 +155,7 @@ class TestTransferEngine:
         assert not engine.has_pending_transfers()
 
         # Verify all data transferred correctly
-        for cpu_t, gpu_t in zip(tensors, gpu_tensors):
+        for cpu_t, gpu_t in zip(tensors, gpu_tensors, strict=False):
             assert torch.allclose(cpu_t, gpu_t.cpu())
 
     def test_transfer_stream_property(self) -> None:
@@ -217,4 +217,4 @@ def test_transfer_engine_cpu_only() -> None:
     if not torch.cuda.is_available():
         with pytest.raises((AssertionError, RuntimeError)):
             # CUDA stream creation will fail without CUDA
-            engine = TransferEngine(config)
+            TransferEngine(config)

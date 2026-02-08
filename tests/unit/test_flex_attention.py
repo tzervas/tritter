@@ -209,10 +209,12 @@ class TestDocumentMask:
         can have different document structures. Batch element 0's document IDs
         should not affect batch element 1's masking.
         """
-        doc_ids = torch.tensor([
-            [0, 0, 1, 1],  # Batch 0: two documents (0 and 1)
-            [5, 5, 5, 7],  # Batch 1: two documents (5 and 7)
-        ])
+        doc_ids = torch.tensor(
+            [
+                [0, 0, 1, 1],  # Batch 0: two documents (0 and 1)
+                [5, 5, 5, 7],  # Batch 1: two documents (5 and 7)
+            ]
+        )
         mask_fn = document_mask(doc_ids)
 
         # Batch 0: same document (5)
@@ -392,16 +394,28 @@ class TestFlexAttentionIntegration:
         batch_size = 2
         seq_len = 128
         query = torch.randn(
-            batch_size, config.num_heads, seq_len, config.head_dim,
-            device="cuda", requires_grad=True
+            batch_size,
+            config.num_heads,
+            seq_len,
+            config.head_dim,
+            device="cuda",
+            requires_grad=True,
         )
         key = torch.randn(
-            batch_size, config.num_heads, seq_len, config.head_dim,
-            device="cuda", requires_grad=True
+            batch_size,
+            config.num_heads,
+            seq_len,
+            config.head_dim,
+            device="cuda",
+            requires_grad=True,
         )
         value = torch.randn(
-            batch_size, config.num_heads, seq_len, config.head_dim,
-            device="cuda", requires_grad=True
+            batch_size,
+            config.num_heads,
+            seq_len,
+            config.head_dim,
+            device="cuda",
+            requires_grad=True,
         )
 
         output = layer(query, key, value)
@@ -497,9 +511,7 @@ class TestFlexAttentionIntegration:
         # Create doc_ids: [0]*64 + [1]*64 for each batch element
         doc_ids = torch.tensor([[0] * 64 + [1] * 64] * batch_size, device="cuda")
 
-        block_mask = create_attention_mask(
-            config, seq_len=seq_len, doc_ids=doc_ids, device="cuda"
-        )
+        block_mask = create_attention_mask(config, seq_len=seq_len, doc_ids=doc_ids, device="cuda")
 
         layer = FlexAttentionLayer(config)
         query = torch.randn(batch_size, config.num_heads, seq_len, config.head_dim, device="cuda")
@@ -640,9 +652,7 @@ class TestCreateAttentionMask:
         config = TritterConfig(attention_mode="causal")
         doc_ids = torch.tensor([[0, 0, 1, 1, 2, 2]], device="cuda")
 
-        block_mask = create_attention_mask(
-            config, seq_len=6, doc_ids=doc_ids, device="cuda"
-        )
+        block_mask = create_attention_mask(config, seq_len=6, doc_ids=doc_ids, device="cuda")
 
         assert block_mask is not None
 

@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class TernaryWeight(nn.Module):
+class TernaryWeight(nn.Module):  # type: ignore[misc]
     """Ternary weight representation using BitNet 1.58-bit quantization.
 
     Weights are quantized to three values: {-1, 0, 1} with a scaling factor.
@@ -47,7 +47,7 @@ class TernaryWeight(nn.Module):
         # Initialize to ~1/sqrt(in_features) to normalize output variance
         # After quantization to {-1,0,+1}, each output has variance ~in_features/4
         # Scale by 1/sqrt(in_features/4) = 2/sqrt(in_features) to get unit variance
-        init_scale = 2.0 / (in_features ** 0.5)
+        init_scale = 2.0 / (in_features**0.5)
         self.scale = nn.Parameter(torch.full((out_features, 1), init_scale))
 
         if bias:
@@ -56,8 +56,9 @@ class TernaryWeight(nn.Module):
             self.register_parameter("bias", None)
 
         # Cache for quantized weights during eval mode
+        self._quantized_weight_cache: torch.Tensor | None
         self.register_buffer("_quantized_weight_cache", None)
-        self._cache_valid = False
+        self._cache_valid: bool = False
 
     def quantize_weights(self, weights: torch.Tensor) -> torch.Tensor:
         """Quantize weights to ternary values {-1, 0, 1}.

@@ -94,10 +94,11 @@ class ModelRouter:
             ("explore", "system"): ("sonnet", "Explore"),
         }
 
-        return routing_table.get(
+        result = routing_table.get(
             (task_type, scope),
-            ("sonnet", "general-purpose"),  # Default fallback
+            ("sonnet", "general-purpose"),
         )
+        return result  # type: ignore[return-value]
 
     def estimate_cost(
         self,

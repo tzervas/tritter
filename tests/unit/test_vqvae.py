@@ -698,8 +698,7 @@ class TestGradientFlow:
 
         # Encoder should have gradients
         has_encoder_grads = any(
-            p.grad is not None and p.grad.abs().max() > 0
-            for p in tokenizer.encoder.parameters()
+            p.grad is not None and p.grad.abs().max() > 0 for p in tokenizer.encoder.parameters()
         )
         assert has_encoder_grads, "Encoder should have gradients from reconstruction loss"
 

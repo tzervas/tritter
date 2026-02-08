@@ -16,7 +16,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 # Supported model sizes
-ModelSize = Literal["test", "125M", "350M", "1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"]
+ModelSize = Literal[
+    "test", "125M", "350M", "1B", "3B", "7B", "10B", "13B", "30B", "33B", "40B", "65B", "70B"
+]
 
 
 @dataclass(frozen=True)

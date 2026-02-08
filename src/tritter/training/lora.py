@@ -30,12 +30,16 @@ import math
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 
 from tritter.quantization.bitnet import TernaryWeight
 from tritter.quantization.packed_ternary import PackedTernaryWeight
+
+if TYPE_CHECKING:
+    from tritter.core.config import TritterConfig
 
 
 @dataclass
@@ -69,9 +73,14 @@ class LoRAConfig:
     rank: int = 16
     alpha: float = 16.0
     dropout: float = 0.0
-    target_modules: list[str] = field(default_factory=lambda: [
-        "q_proj", "k_proj", "v_proj", "o_proj"  # Attention projections
-    ])
+    target_modules: list[str] = field(
+        default_factory=lambda: [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",  # Attention projections
+        ]
+    )
     modules_to_save: list[str] = field(default_factory=list)
     bias: str = "none"  # "none", "lora_only", "all"
     use_rslora: bool = False
@@ -110,7 +119,7 @@ class LoRAConfig:
         return self.alpha / self.rank
 
 
-class LoRALinear(nn.Module):
+class LoRALinear(nn.Module):  # type: ignore[misc]
     """Linear layer with LoRA adaptation.
 
     Why: Implements the core LoRA computation:
@@ -236,6 +245,7 @@ class LoRALinear(nn.Module):
             elif isinstance(self.base_layer, PackedTernaryWeight):
                 # Unpack for SVD
                 from tritter.quantization.packed_ternary import unpack_ternary
+
                 W = unpack_ternary(
                     self.base_layer.packed_weight,
                     self.base_layer.scale,
@@ -428,8 +438,7 @@ def apply_lora(
     for name, param in model.named_parameters():
         # Check if this parameter should stay trainable
         should_save = any(
-            _module_name_matches(name, [pattern])
-            for pattern in config.modules_to_save
+            _module_name_matches(name, [pattern]) for pattern in config.modules_to_save
         )
         if not should_save:
             # Check if it's a LoRA parameter (those should be trainable)
@@ -593,10 +602,13 @@ def save_lora_adapters(model: nn.Module, path: str) -> None:
     if not adapters:
         raise ValueError("No LoRA adapters found in model")
 
-    torch.save({
-        "lora_config": config_dict,
-        "adapters": adapters,
-    }, path)
+    torch.save(
+        {
+            "lora_config": config_dict,
+            "adapters": adapters,
+        },
+        path,
+    )
 
 
 def load_lora_adapters(model: nn.Module, path: str, strict: bool = True) -> nn.Module:
@@ -683,8 +695,7 @@ def estimate_lora_memory(
     # Estimate number of target modules
     # Attention: q, k, v, o projections
     num_attention_targets = sum(
-        1 for t in lora_config.target_modules
-        if t in ("q_proj", "k_proj", "v_proj", "o_proj")
+        1 for t in lora_config.target_modules if t in ("q_proj", "k_proj", "v_proj", "o_proj")
     )
     # Per-layer LoRA params
     h = model_config.hidden_size
@@ -795,6 +806,7 @@ class LoRATrainer:
         Full model can be reconstructed from base + adapters.
         """
         import os
+
         os.makedirs(path, exist_ok=True)
 
         # Always save LoRA adapters

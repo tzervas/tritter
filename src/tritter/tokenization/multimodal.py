@@ -125,7 +125,9 @@ class MultiModalTokenizer:
         # Byte fallback: reserved at end of vocab (last 256 tokens)
         self._bpe_offset = 8
         self._byte_fallback_start = vocab_size - 256
-        self._max_bpe_id = self._byte_fallback_start - 1  # BPE tokens use range [8, byte_fallback_start-1]
+        self._max_bpe_id = (
+            self._byte_fallback_start - 1
+        )  # BPE tokens use range [8, byte_fallback_start-1]
 
         # Initialize AST tokenizer for code (lazy initialization to avoid import errors)
         self._ast_tokenizer: ASTTokenizer | None = None
@@ -545,8 +547,8 @@ class MultiModalTokenizer:
         AST_TOKENS_END = 1502  # End of AST token range
 
         # Separate tokens by type
-        byte_chars = []
-        decoded_parts = []
+        byte_chars: list[int] = []
+        decoded_parts: list[str] = []
 
         i = 0
         while i < len(token_ids):
@@ -607,9 +609,8 @@ class MultiModalTokenizer:
                 while i < len(token_ids):
                     tid = token_ids[i]
                     # Check if this is a BPE token (not AST, not byte fallback, not special)
-                    is_bpe = (
-                        (self._bpe_offset <= tid < KEYWORD_START)
-                        or (AST_TOKENS_END <= tid < self._byte_fallback_start)
+                    is_bpe = (self._bpe_offset <= tid < KEYWORD_START) or (
+                        AST_TOKENS_END <= tid < self._byte_fallback_start
                     )
                     if is_bpe:
                         # Map back to tiktoken ID - reverse the encoding logic
@@ -657,7 +658,7 @@ class MultiModalTokenizer:
         return "".join(decoded_parts)
 
 
-class UnifiedEmbedding(nn.Module):
+class UnifiedEmbedding(nn.Module):  # type: ignore[misc]
     """Unified embedding layer for all modalities.
 
     Maps tokens from all modalities to a shared embedding space, enabling cross-modal

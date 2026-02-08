@@ -55,18 +55,15 @@ import argparse
 import gc
 import json
 import math
-import os
 import shutil
 import statistics
 import sys
-import tempfile
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -76,24 +73,24 @@ from torch.optim import AdamW
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+# Import hybrid gradient predictor
+from hybrid_gradient_predictor import (
+    HybridGradientPredictor,
+    compute_adaptive_lr_scale,
+    compute_correction_steps,
+    compute_dynamic_horizon,
+)
+
 from tritter.core.config import TritterConfig
 from tritter.core.model_specs import get_model_spec
 from tritter.models.architecture import TritterModel
 from tritter.tokenization.multimodal import MultiModalTokenizer
 from tritter.training.data import DataConfig, StreamingCodeDataset, create_dataloader
 
-# Import hybrid gradient predictor
-from hybrid_gradient_predictor import (
-    HybridGradientPredictor,
-    compute_dynamic_horizon,
-    compute_adaptive_lr_scale,
-    compute_correction_steps,
-)
-
-
 # =============================================================================
 # Phase System
 # =============================================================================
+
 
 class Phase(Enum):
     WARMUP = auto()
@@ -122,6 +119,7 @@ class DivergenceSignal:
 # Auto-Configuration
 # =============================================================================
 
+
 @dataclass
 class AutoConfig:
     """Auto-detected and adjusted configuration."""
@@ -139,7 +137,7 @@ class AutoConfig:
     gradient_memory_budget_mb: float = 512.0  # Max memory for gradient storage
 
     @classmethod
-    def auto_detect(cls, model_size: str) -> "AutoConfig":
+    def auto_detect(cls, model_size: str) -> AutoConfig:
         """Auto-detect optimal configuration based on hardware."""
         config = cls()
         config.cuda_available = torch.cuda.is_available()
@@ -188,9 +186,11 @@ class AutoConfig:
 # Training Statistics with Median-Based Baselines
 # =============================================================================
 
+
 @dataclass
 class TrainingStatistics:
     """Rolling statistics with robust median-based baselines."""
+
     window_size: int = 100
 
     def __post_init__(self):
@@ -225,7 +225,7 @@ class TrainingStatistics:
             # Variance using MAD (Median Absolute Deviation) for robustness
             if len(self.losses) > 1:
                 median_loss = statistics.median(self.losses)
-                mad = statistics.median([abs(l - median_loss) for l in self.losses])
+                mad = statistics.median([abs(loss_val - median_loss) for loss_val in self.losses])
                 self.loss_variance = (1.4826 * mad) ** 2  # Scale factor for normal
 
             # Update grad baseline with median
@@ -256,9 +256,11 @@ class TrainingStatistics:
 # Divergence Monitor with Dynamic Thresholds
 # =============================================================================
 
+
 @dataclass
 class DivergenceConfig:
     """Configuration for divergence detection."""
+
     loss_sigma_threshold: float = 3.0  # z-score threshold
     gradient_explosion_factor: float = 10.0
     gradient_vanishing_factor: float = 0.01
@@ -278,7 +280,7 @@ class DivergenceMonitor:
         loss: float,
         grad_norm: float,
         stats: TrainingStatistics,
-        predicted_loss: Optional[float] = None,
+        predicted_loss: float | None = None,
     ) -> DivergenceSignal:
         """Check all divergence signals with dynamic thresholds."""
 
@@ -361,6 +363,7 @@ class DivergenceMonitor:
 # Memory-Efficient Gradient Predictor
 # =============================================================================
 
+
 class GradientPredictor:
     """Memory-efficient gradient prediction using statistics only.
 
@@ -373,8 +376,8 @@ class GradientPredictor:
     def __init__(self, memory_budget_mb: float = 512.0):
         self.memory_budget_mb = memory_budget_mb
         # Store only last gradient for velocity (single copy)
-        self.last_gradient: Optional[dict[str, torch.Tensor]] = None
-        self.prev_gradient: Optional[dict[str, torch.Tensor]] = None
+        self.last_gradient: dict[str, torch.Tensor] | None = None
+        self.prev_gradient: dict[str, torch.Tensor] | None = None
         # Compressed statistics per layer
         self.layer_stats: dict[str, deque] = {}  # name -> deque of (norm, mean, std)
         self.loss_history: deque[float] = deque(maxlen=20)
@@ -413,11 +416,13 @@ class GradientPredictor:
             if name not in self.layer_stats:
                 self.layer_stats[name] = deque(maxlen=20)
 
-            self.layer_stats[name].append((
-                grad.norm().item(),
-                grad.mean().item(),
-                grad.std().item() if grad.numel() > 1 else 0.0,
-            ))
+            self.layer_stats[name].append(
+                (
+                    grad.norm().item(),
+                    grad.mean().item(),
+                    grad.std().item() if grad.numel() > 1 else 0.0,
+                )
+            )
 
         self.loss_history.append(loss)
 
@@ -431,7 +436,7 @@ class GradientPredictor:
             return
 
         cvs = []
-        for name, stats in self.layer_stats.items():
+        for _name, stats in self.layer_stats.items():
             if len(stats) < 5:
                 continue
 
@@ -503,23 +508,25 @@ class GradientPredictor:
 # Phase Controller with Lock Duration and Proper Transitions
 # =============================================================================
 
+
 @dataclass
 class PhaseConfig:
     """Phase configuration with v2 improvements."""
+
     warmup_steps: int = 500
     min_full_steps: int = 25  # Reduced: less full training needed with better predictor
     base_predict_horizon: int = 12  # Base horizon (scaled by confidence)
     max_predict_horizon: int = 30  # Max horizon when confidence is very high
-    min_predict_horizon: int = 2   # Min horizon when confidence is low
+    min_predict_horizon: int = 2  # Min horizon when confidence is low
     min_correction_steps: int = 3  # Min correction steps
-    max_correction_steps: int = 25 # Max correction steps (for large errors)
+    max_correction_steps: int = 25  # Max correction steps (for large errors)
     correction_error_multiplier: float = 15.0  # Multiplier for error-based correction
     confidence_threshold: float = 0.85  # Raised: be more conservative entering PREDICT
     min_phase_duration: int = 8  # Minimum steps before phase change
     # Adaptive LR scaling parameters
     base_lr_scale: float = 0.8  # Base LR scale in predict phase
-    min_lr_scale: float = 0.4   # Minimum LR scale
-    max_lr_scale: float = 1.0   # Maximum LR scale (can use full LR if confident)
+    min_lr_scale: float = 0.4  # Minimum LR scale
+    max_lr_scale: float = 1.0  # Maximum LR scale (can use full LR if confident)
     divergence: DivergenceConfig = field(default_factory=DivergenceConfig)
 
 
@@ -569,12 +576,14 @@ class PhaseController:
         if self.phase_lock_remaining > 0:
             return  # Don't transition during lock
 
-        self.metrics["phase_transitions"].append({
-            "from": self.phase.name,
-            "to": new_phase.name,
-            "step": self.step,
-            "reason": reason,
-        })
+        self.metrics["phase_transitions"].append(
+            {
+                "from": self.phase.name,
+                "to": new_phase.name,
+                "step": self.step,
+                "reason": reason,
+            }
+        )
 
         old_phase = self.phase
         self.phase = new_phase
@@ -596,10 +605,10 @@ class PhaseController:
         self,
         loss: float,
         grad_norm: float,
-        gradients: Optional[dict[str, torch.Tensor]] = None,
-        predicted_loss: Optional[float] = None,
+        gradients: dict[str, torch.Tensor] | None = None,
+        predicted_loss: float | None = None,
         skipped: bool = False,
-    ) -> tuple[Phase, Optional[DivergenceSignal]]:
+    ) -> tuple[Phase, DivergenceSignal | None]:
         """Update controller with comprehensive validation."""
         self.step += 1
         self.phase_step += 1
@@ -622,20 +631,24 @@ class PhaseController:
         signal = self.divergence_monitor.check(loss, grad_norm, self.stats, predicted_loss)
 
         if signal.level == DivergenceLevel.CRITICAL:
-            self.metrics["divergence_events"].append({
-                "step": self.step,
-                "level": signal.level.name,
-                "reason": signal.reason,
-            })
+            self.metrics["divergence_events"].append(
+                {
+                    "step": self.step,
+                    "level": signal.level.name,
+                    "reason": signal.reason,
+                }
+            )
             self.transition_to(Phase.FULL, f"Critical: {signal.reason}")
             return self.phase, signal
 
         if signal.level in (DivergenceLevel.SEVERE, DivergenceLevel.MODERATE):
-            self.metrics["divergence_events"].append({
-                "step": self.step,
-                "level": signal.level.name,
-                "reason": signal.reason,
-            })
+            self.metrics["divergence_events"].append(
+                {
+                    "step": self.step,
+                    "level": signal.level.name,
+                    "reason": signal.reason,
+                }
+            )
             if self.phase == Phase.PREDICT:
                 self.transition_to(Phase.CORRECT, f"Divergence: {signal.reason}")
             elif self.phase == Phase.CORRECT:
@@ -665,8 +678,10 @@ class PhaseController:
                     print(f"Extending warmup: {reason}")
 
         elif self.phase == Phase.FULL:
-            if (self.phase_step >= self.config.min_full_steps and
-                self.predictor.confidence > self.config.confidence_threshold):
+            if (
+                self.phase_step >= self.config.min_full_steps
+                and self.predictor.confidence > self.config.confidence_threshold
+            ):
                 # V2: Calculate dynamic horizon based on confidence
                 self.current_dynamic_horizon = compute_dynamic_horizon(
                     base_horizon=self.config.base_predict_horizon,
@@ -674,7 +689,10 @@ class PhaseController:
                     min_horizon=self.config.min_predict_horizon,
                     max_horizon=self.config.max_predict_horizon,
                 )
-                self.transition_to(Phase.PREDICT, f"Conf={self.predictor.confidence:.2f}, Horizon={self.current_dynamic_horizon}")
+                self.transition_to(
+                    Phase.PREDICT,
+                    f"Conf={self.predictor.confidence:.2f}, Horizon={self.current_dynamic_horizon}",
+                )
 
         elif self.phase == Phase.PREDICT:
             self.predict_horizon += 1
@@ -684,7 +702,8 @@ class PhaseController:
                 # Calculate error-weighted correction steps
                 mean_error = (
                     statistics.mean(self.recent_prediction_errors)
-                    if self.recent_prediction_errors else 0.1
+                    if self.recent_prediction_errors
+                    else 0.1
                 )
                 self.target_correction_steps = compute_correction_steps(
                     prediction_error=mean_error,
@@ -693,7 +712,10 @@ class PhaseController:
                     max_steps=self.config.max_correction_steps,
                     error_multiplier=self.config.correction_error_multiplier,
                 )
-                self.transition_to(Phase.CORRECT, f"Horizon {self.predict_horizon}, Corrections={self.target_correction_steps}")
+                self.transition_to(
+                    Phase.CORRECT,
+                    f"Horizon {self.predict_horizon}, Corrections={self.target_correction_steps}",
+                )
             elif self.predictor.confidence < self.config.confidence_threshold * 0.6:
                 # V2: Slightly lower threshold (0.6 vs 0.7) since we're more confident
                 self.target_correction_steps = self.config.max_correction_steps // 2
@@ -705,7 +727,9 @@ class PhaseController:
 
             # V2: Use error-weighted target instead of fixed count
             if self.correct_counter >= self.target_correction_steps:
-                self.transition_to(Phase.FULL, f"Corrections complete ({self.correct_counter} steps)")
+                self.transition_to(
+                    Phase.FULL, f"Corrections complete ({self.correct_counter} steps)"
+                )
 
     def reset_for_recovery(self):
         """Full reset for recovery from NaN."""
@@ -725,6 +749,7 @@ class PhaseController:
 # =============================================================================
 # Disk-Based Recovery Checkpoint Manager
 # =============================================================================
+
 
 class RecoveryCheckpointManager:
     """Disk-based checkpoint manager for recovery."""
@@ -779,7 +804,7 @@ class RecoveryCheckpointManager:
         # 2. Load optimizer state to CPU, then move to GPU
         opt_state = torch.load(ckpt_path / "optimizer.pt", weights_only=True, map_location="cpu")
         # Move optimizer state tensors to device
-        for state in opt_state['state'].values():
+        for state in opt_state["state"].values():
             for k, v in state.items():
                 if isinstance(v, torch.Tensor):
                     state[k] = v.to(device)
@@ -804,6 +829,7 @@ class RecoveryCheckpointManager:
 # =============================================================================
 # Training Configuration
 # =============================================================================
+
 
 @dataclass
 class HybridTrainerConfig:
@@ -841,6 +867,7 @@ class HybridTrainerConfig:
 # Helper Functions
 # =============================================================================
 
+
 def compute_grad_norm(model: nn.Module) -> float:
     """Compute gradient norm with NaN check."""
     total_norm = 0.0
@@ -848,7 +875,7 @@ def compute_grad_norm(model: nn.Module) -> float:
         if p.grad is not None:
             param_norm = p.grad.data.norm(2)
             if not torch.isfinite(param_norm):
-                return float('inf')
+                return float("inf")
             total_norm += param_norm.item() ** 2
     return math.sqrt(total_norm)
 
@@ -882,6 +909,7 @@ def get_gpu_memory_info() -> tuple[float, float]:
 # Main Training Function
 # =============================================================================
 
+
 def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
     """Production-grade hybrid predictive training."""
 
@@ -891,7 +919,7 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
 
     # Auto-detect configuration
     auto_config = AutoConfig.auto_detect(config.model_size)
-    print(f"\nAuto-detected configuration:")
+    print("\nAuto-detected configuration:")
     print(f"  GPU: {auto_config.gpu_name} ({auto_config.gpu_memory_gb:.1f} GB)")
     print(f"  Batch size: {auto_config.batch_size}")
     print(f"  Gradient accumulation: {auto_config.gradient_accumulation}")
@@ -911,17 +939,23 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
     # Pre-flight memory check using tritter_accel (rust-ai-core)
     try:
         import tritter_accel as ta
+
         param_count = int(spec.total_params_billions() * 1e9)
         hidden_dim = spec.hidden_size
         num_layers = spec.num_layers
         dtype = "bf16" if config.use_amp else "f32"
 
         params_mem, grads_mem, opt_mem, acts_mem, total_mem = ta.estimate_training_memory(
-            param_count, config.batch_size, config.max_seq_length,
-            hidden_dim, num_layers, dtype, True  # gradient_checkpointing=True
+            param_count,
+            config.batch_size,
+            config.max_seq_length,
+            hidden_dim,
+            num_layers,
+            dtype,
+            True,  # gradient_checkpointing=True
         )
 
-        print(f"\n--- Pre-flight Memory Estimate (via rust-ai-core) ---")
+        print("\n--- Pre-flight Memory Estimate (via rust-ai-core) ---")
         print(f"  Parameters: {params_mem / 1024**3:.2f} GB")
         print(f"  Gradients: {grads_mem / 1024**3:.2f} GB")
         print(f"  Optimizer: {opt_mem / 1024**3:.2f} GB")
@@ -933,36 +967,52 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
         gpu_budget_bytes = int(auto_config.gpu_memory_gb * 0.90 * 1024**3)  # 90% of GPU for safety
         tracker = ta.PyMemoryTracker(gpu_budget_bytes)
         fits, required, available = tracker.would_training_fit(
-            param_count, config.batch_size, config.max_seq_length,
-            hidden_dim, num_layers, dtype, True
+            param_count,
+            config.batch_size,
+            config.max_seq_length,
+            hidden_dim,
+            num_layers,
+            dtype,
+            True,
         )
 
         if not fits:
-            print(f"\n⚠️  WARNING: Training may not fit in GPU memory!")
-            print(f"    Required: {required / 1024**3:.2f} GB, Available: {available / 1024**3:.2f} GB")
-            print(f"    Consider: smaller batch size, shorter seq length, or gradient accumulation")
+            print("\n⚠️  WARNING: Training may not fit in GPU memory!")
+            print(
+                f"    Required: {required / 1024**3:.2f} GB, Available: {available / 1024**3:.2f} GB"
+            )
+            print("    Consider: smaller batch size, shorter seq length, or gradient accumulation")
 
             # Auto-reduce batch size if needed
             while not fits and config.batch_size > 1:
                 config.batch_size = max(1, config.batch_size // 2)
                 config.gradient_accumulation_steps *= 2
                 fits, required, available = tracker.would_training_fit(
-                    param_count, config.batch_size, config.max_seq_length,
-                    hidden_dim, num_layers, dtype, True
+                    param_count,
+                    config.batch_size,
+                    config.max_seq_length,
+                    hidden_dim,
+                    num_layers,
+                    dtype,
+                    True,
                 )
-                print(f"    Auto-adjusting: batch_size={config.batch_size}, grad_accum={config.gradient_accumulation_steps}")
+                print(
+                    f"    Auto-adjusting: batch_size={config.batch_size}, grad_accum={config.gradient_accumulation_steps}"
+                )
 
             if not fits:
-                print(f"    ❌ Cannot fit even with batch_size=1. GPU too small for this model.")
-                print(f"    Consider: smaller model, shorter sequence length, or larger GPU")
+                print("    ❌ Cannot fit even with batch_size=1. GPU too small for this model.")
+                print("    Consider: smaller model, shorter sequence length, or larger GPU")
         else:
-            print(f"  ✓ Training will fit in GPU memory")
+            print("  ✓ Training will fit in GPU memory")
     except ImportError:
         print("\n(tritter_accel not available for pre-flight memory check)")
     except Exception as e:
         print(f"\n(Pre-flight memory check failed: {e})")
     print(f"\nModel: {config.model_size} ({spec.total_params_billions():.2f}B params)")
-    print(f"Phase Config: WARMUP={config.phase.warmup_steps}, FULL≥{config.phase.min_full_steps}, PREDICT≤{config.phase.max_predict_horizon}")
+    print(
+        f"Phase Config: WARMUP={config.phase.warmup_steps}, FULL≥{config.phase.min_full_steps}, PREDICT≤{config.phase.max_predict_horizon}"
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -1015,7 +1065,7 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
     grad_norm_cache = 0.0
 
     for step in range(1, config.max_steps + 1):
-        step_start = time.time()
+        time.time()
 
         # Get batch
         try:
@@ -1041,9 +1091,7 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
                 logits = torch.clamp(logits, min=-100, max=100)
 
                 loss = F.cross_entropy(
-                    logits.view(-1, logits.size(-1)),
-                    labels.view(-1),
-                    ignore_index=-100
+                    logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-100
                 )
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
@@ -1081,7 +1129,7 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
                         # Reduce learning rate
                         current_lr = config.learning_rate * (0.5 ** (recovery_count + 1))
                         for pg in optimizer.param_groups:
-                            pg['lr'] = current_lr
+                            pg["lr"] = current_lr
                         print(f"Learning rate reduced to {current_lr:.2e}")
 
                         # Reset controller and predictor
@@ -1180,7 +1228,9 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
             # Safety check 1: Loss spike detection using z-score
             loss_spike = False
             if controller.stats.is_ready:
-                loss_zscore = abs(loss_value - controller.stats.loss_ema) / max(controller.stats.loss_std, 1e-8)
+                loss_zscore = abs(loss_value - controller.stats.loss_ema) / max(
+                    controller.stats.loss_std, 1e-8
+                )
                 if loss_zscore > 2.5:  # V2: Slightly higher threshold (2.5 vs 2.0)
                     loss_spike = True
                     print(f"Step {step}: Loss spike (z={loss_zscore:.1f}), falling back to FULL")
@@ -1206,14 +1256,14 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
                         max_scale=config.phase.max_lr_scale,
                     )
                     for pg in optimizer.param_groups:
-                        pg['lr'] = current_lr * lr_scale
+                        pg["lr"] = current_lr * lr_scale
 
                     grad_norm_cache = compute_grad_norm(model)
                     optimizer.step()
 
                     # Restore learning rate
                     for pg in optimizer.param_groups:
-                        pg['lr'] = current_lr
+                        pg["lr"] = current_lr
 
                     # V2: Track prediction error for future corrections
                     if predicted_loss is not None and math.isfinite(predicted_loss):
@@ -1225,7 +1275,9 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
                             0.9 * controller.recent_prediction_bias + 0.1 * bias
                         )
                 else:
-                    print(f"Step {step}: Predicted gradient too large ({max_pred_norm:.1f} vs {max_allowed:.1f})")
+                    print(
+                        f"Step {step}: Predicted gradient too large ({max_pred_norm:.1f} vs {max_allowed:.1f})"
+                    )
                     controller.transition_to(Phase.FULL, "Predicted gradient too large")
                     grad_norm_cache = 0.0
             else:
@@ -1245,7 +1297,11 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
         if step % config.log_every == 0:
             elapsed = time.time() - start_time
             tokens_per_sec = total_tokens / elapsed
-            backward_pct = controller.metrics["backward_passes"] / max(controller.metrics["forward_passes"], 1) * 100
+            backward_pct = (
+                controller.metrics["backward_passes"]
+                / max(controller.metrics["forward_passes"], 1)
+                * 100
+            )
             skip_pct = 100 - backward_pct
             mem_alloc, mem_peak = get_gpu_memory_info()
 
@@ -1272,15 +1328,19 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
 
             torch.save(model.state_dict(), ckpt_dir / "model.pt")
             with open(ckpt_dir / "metrics.json", "w") as f:
-                json.dump({
-                    "step": step,
-                    "loss": loss_value,
-                    "total_tokens": total_tokens,
-                    "phase": phase.name,
-                    "confidence": controller.predictor.confidence,
-                    "learning_rate": current_lr,
-                    "recoveries": recovery_count,
-                }, f, indent=2)
+                json.dump(
+                    {
+                        "step": step,
+                        "loss": loss_value,
+                        "total_tokens": total_tokens,
+                        "phase": phase.name,
+                        "confidence": controller.predictor.confidence,
+                        "learning_rate": current_lr,
+                        "recoveries": recovery_count,
+                    },
+                    f,
+                    indent=2,
+                )
 
             print(f"  Checkpoint saved: {ckpt_dir}")
 
@@ -1300,7 +1360,8 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
     # Prediction accuracy (from controller's error tracking)
     mean_prediction_error = (
         statistics.mean(controller.recent_prediction_errors)
-        if controller.recent_prediction_errors else 0.0
+        if controller.recent_prediction_errors
+        else 0.0
     )
     prediction_bias = controller.recent_prediction_bias
 
@@ -1318,41 +1379,34 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
         "model_size": config.model_size,
         "methodology": "hybrid_predictive_v2",
         "version": "2.0",
-
         # Basic metrics
         "total_steps": step,
         "total_tokens": total_tokens,
         "total_time_seconds": total_time,
         "final_loss": loss_history[-1][1] if loss_history else 0,
-        "min_loss": min(l[1] for l in loss_history) if loss_history else 0,
-
+        "min_loss": min(entry[1] for entry in loss_history) if loss_history else 0,
         # Forward/Backward reduction metrics
         "backward_passes": backward_passes,
         "forward_passes": forward_passes,
         "predictions_used": predictions_used,
         "backward_reduction_percent": backward_reduction,
         "forward_efficiency": backward_reduction,  # Alias for clarity
-
         # Efficacy metrics
         "tokens_per_second": tokens_per_second,
         "tokens_per_backward_pass": tokens_per_backward,
         "effective_throughput_multiplier": forward_passes / max(backward_passes, 1),
-
         # Prediction quality metrics
         "mean_prediction_error": mean_prediction_error,
         "prediction_bias": prediction_bias,
         "final_confidence": controller.predictor.confidence,
-
         # Hybrid predictor method weights (which methods are most accurate)
         "method_weights": method_weights,
         "method_errors": method_errors,
-
         # Phase statistics
         "corrections_applied": controller.metrics["corrections_applied"],
         "divergence_events": len(controller.metrics["divergence_events"]),
         "phase_transition_count": len(phase_transitions),
         "phase_entry_counts": phase_counts,
-
         # Recovery and stability
         "recoveries": recovery_count,
         "final_learning_rate": current_lr,
@@ -1397,8 +1451,8 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
     print(f"  Final confidence: {final_metrics['final_confidence']:.2f}")
     print()
     print("=== Hybrid Predictor Method Weights ===")
-    for method, weight in final_metrics['method_weights'].items():
-        error = final_metrics['method_errors'].get(method, 0)
+    for method, weight in final_metrics["method_weights"].items():
+        error = final_metrics["method_errors"].get(method, 0)
         print(f"  {method}: weight={weight:.2f}, error={error:.3f}")
     print()
     print("=== Stability ===")
@@ -1416,11 +1470,14 @@ def train_hybrid_production(config: HybridTrainerConfig) -> dict[str, Any]:
 # Main
 # =============================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(description="Production Hybrid Predictive Training v2")
 
     parser.add_argument("--model", type=str, default="100M", choices=["100M", "500M", "1B"])
-    parser.add_argument("--data-dir", type=Path, default=Path.home() / "data" / "tritter" / "processed")
+    parser.add_argument(
+        "--data-dir", type=Path, default=Path.home() / "data" / "tritter" / "processed"
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints"))
     parser.add_argument("--max-steps", type=int, default=5000)
 

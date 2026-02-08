@@ -187,7 +187,7 @@ class MultimodalOutput:
     modality_positions: dict[str, tuple[int, int]] = field(default_factory=dict)
 
 
-class MultimodalEmbedding(nn.Module):
+class MultimodalEmbedding(nn.Module):  # type: ignore[misc]
     """Unified multimodal embedding layer for text, vision, and audio.
 
     Why: Early fusion multimodal architecture requires all modalities to share
@@ -561,11 +561,11 @@ class MultimodalEmbedding(nn.Module):
             ValueError: If no inputs are provided (all are None).
         """
         if batch.input_ids is not None:
-            return batch.input_ids.shape[0]
+            return int(batch.input_ids.shape[0])
         if batch.pixel_values is not None:
-            return batch.pixel_values.shape[0]
+            return int(batch.pixel_values.shape[0])
         if batch.audio_waveforms is not None:
-            return batch.audio_waveforms.shape[0]
+            return int(batch.audio_waveforms.shape[0])
         raise ValueError(
             "No inputs provided: at least one of input_ids, pixel_values, "
             "or audio_waveforms must be non-None."
@@ -618,7 +618,7 @@ class MultimodalEmbedding(nn.Module):
         """
         total_params = sum(p.numel() for p in self.parameters())
         # Assume FP32 (4 bytes per param)
-        return total_params * 4 / 1e9
+        return total_params * 4 / 1e9  # type: ignore[no-any-return]
 
 
 def create_multimodal_embedding(

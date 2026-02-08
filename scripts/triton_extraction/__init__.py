@@ -22,10 +22,10 @@ Reference: docs/TRITON_EXTRACTION_PLAN.md
 """
 
 from scripts.triton_extraction.extract_kernels import (
+    REPOSITORIES,
     ExtractionResult,
     RepositoryConfig,
     TritonExtractor,
-    REPOSITORIES,
 )
 
 __all__ = [

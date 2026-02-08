@@ -28,13 +28,15 @@ import argparse
 import gc
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
 
 if TYPE_CHECKING:
-    from tritter.core.config import TritterConfig
+    pass
 
 
 @dataclass
@@ -54,10 +56,6 @@ class VerificationResult:
     memory_gb: float
     duration_sec: float
     message: str
-
-
-from contextlib import contextmanager
-from typing import Iterator
 
 
 class ContextVerifier:
@@ -334,7 +332,7 @@ class ContextVerifier:
 
             memory_samples = []
 
-            for start in range(0, total_tokens, chunk_size):
+            for _start in range(0, total_tokens, chunk_size):
                 key = torch.randn(B, H, chunk_size, D, device=self.device)
                 value = torch.randn(B, H, chunk_size, D, device=self.device)
 
@@ -351,7 +349,7 @@ class ContextVerifier:
             final_memory = memory_samples[-1]
 
             # Memory during last quarter (after window should be full)
-            late_samples = memory_samples[-(len(memory_samples) // 4):]
+            late_samples = memory_samples[-(len(memory_samples) // 4) :]
             late_variance = max(late_samples) - min(late_samples)
 
             # Memory is bounded if variance in late samples is small relative to budget
@@ -418,7 +416,8 @@ class ContextVerifier:
             # Calculate predicted memory
             # Weight memory (BitNet 1.58 bits)
             params = sum(
-                p.numel() for p in config._get_param_estimates().values()  # type: ignore
+                p.numel()
+                for p in config._get_param_estimates().values()  # type: ignore
             )
             predicted_weights = params * 1.58 / 8 / 1e9
 
@@ -548,9 +547,7 @@ class ContextVerifier:
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Verify 128K context support within memory budget"
-    )
+    parser = argparse.ArgumentParser(description="Verify 128K context support within memory budget")
     parser.add_argument(
         "--budget-gb",
         type=float,

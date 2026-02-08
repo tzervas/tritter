@@ -21,7 +21,6 @@ Usage:
 
 import re
 from dataclasses import dataclass, field
-from typing import Callable
 
 
 @dataclass
@@ -31,6 +30,7 @@ class SecurityIssue:
     Why: Structured representation enables consistent handling and
     explanation generation for negative training examples.
     """
+
     issue_type: str
     severity: str  # "critical", "high", "medium", "low"
     line_number: int | None
@@ -45,6 +45,7 @@ class ScanResult:
 
     Why: Aggregates all findings to support quality labeling decisions.
     """
+
     has_secrets: bool = False
     security_issues: list[SecurityIssue] = field(default_factory=list)
     quality_label: str = "positive"  # positive, negative, reject
@@ -73,7 +74,6 @@ SECRET_PATTERNS = [
     # API Keys
     (r"(?i)(api[_-]?key|apikey)\s*[=:]\s*['\"][a-zA-Z0-9_\-]{20,}['\"]", "api_key"),
     (r"(?i)(secret|password|passwd|pwd)\s*[=:]\s*['\"][^'\"]{8,}['\"]", "password"),
-
     # Service-specific tokens
     (r"ghp_[a-zA-Z0-9]{36}", "github_token"),
     (r"gho_[a-zA-Z0-9]{36}", "github_oauth"),
@@ -84,7 +84,6 @@ SECRET_PATTERNS = [
     (r"(?i)aws[_-]?secret[_-]?access[_-]?key\s*[=:]\s*['\"][a-zA-Z0-9/+=]{40}['\"]", "aws_secret"),
     (r"xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}", "slack_token"),
     (r"(?i)bearer\s+[a-zA-Z0-9\-_]{20,}\.[a-zA-Z0-9\-_]{20,}", "bearer_token"),
-
     # Private keys
     (r"-----BEGIN\s+(RSA|DSA|EC|OPENSSH|PGP)\s+PRIVATE\s+KEY-----", "private_key"),
     (r"-----BEGIN\s+PRIVATE\s+KEY-----", "private_key"),
@@ -310,10 +309,7 @@ class SecurityScanner:
 
     def __init__(self) -> None:
         """Initialize scanner with compiled patterns."""
-        self._secret_patterns = [
-            (re.compile(pattern), name)
-            for pattern, name in SECRET_PATTERNS
-        ]
+        self._secret_patterns = [(re.compile(pattern), name) for pattern, name in SECRET_PATTERNS]
         self._python_patterns = [
             (re.compile(pattern), issue_type, explanation, fix)
             for pattern, issue_type, explanation, fix in PYTHON_VULNERABILITY_PATTERNS
@@ -346,14 +342,16 @@ class SecurityScanner:
                 if pattern.search(line):
                     result.has_secrets = True
                     result.quality_label = "reject"
-                    result.security_issues.append(SecurityIssue(
-                        issue_type=f"secret_{secret_type}",
-                        severity="critical",
-                        line_number=i,
-                        code_snippet=line.strip()[:100],
-                        explanation=f"Hardcoded {secret_type} detected. Never commit secrets to code.",
-                        fix_suggestion="Use environment variables or a secrets manager.",
-                    ))
+                    result.security_issues.append(
+                        SecurityIssue(
+                            issue_type=f"secret_{secret_type}",
+                            severity="critical",
+                            line_number=i,
+                            code_snippet=line.strip()[:100],
+                            explanation=f"Hardcoded {secret_type} detected. Never commit secrets to code.",
+                            fix_suggestion="Use environment variables or a secrets manager.",
+                        )
+                    )
 
         # If secrets found, don't bother with other checks
         if result.has_secrets:
@@ -373,20 +371,21 @@ class SecurityScanner:
             for i, line in enumerate(lines, 1):
                 match = pattern.search(line)
                 if match:
-                    result.security_issues.append(SecurityIssue(
-                        issue_type=issue_type,
-                        severity="high" if "injection" in issue_type else "medium",
-                        line_number=i,
-                        code_snippet=match.group(0)[:100],
-                        explanation=explanation,
-                        fix_suggestion=fix,
-                    ))
+                    result.security_issues.append(
+                        SecurityIssue(
+                            issue_type=issue_type,
+                            severity="high" if "injection" in issue_type else "medium",
+                            line_number=i,
+                            code_snippet=match.group(0)[:100],
+                            explanation=explanation,
+                            fix_suggestion=fix,
+                        )
+                    )
 
         # Set quality label based on findings
         if result.security_issues:
             high_severity = any(
-                issue.severity in ("critical", "high")
-                for issue in result.security_issues
+                issue.severity in ("critical", "high") for issue in result.security_issues
             )
             result.quality_label = "negative" if high_severity else "positive"
 
@@ -448,7 +447,7 @@ def greet(name: str) -> str:
     return f"Hello, {name}!"
 '''
 
-    test_code_unsafe = '''
+    test_code_unsafe = """
 import os
 import pickle
 
@@ -460,12 +459,12 @@ def run_command(cmd):
 
 def load_data(data):
     return pickle.loads(data)  # BAD: unsafe deserialization
-'''
+"""
 
-    test_code_secrets = '''
+    test_code_secrets = """
 API_KEY = "sk-1234567890abcdefghijklmnopqrstuvwxyz123456"
 password = "super_secret_password_123"
-'''
+"""
 
     scanner = SecurityScanner()
 

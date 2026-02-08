@@ -92,8 +92,13 @@ class TestLoRAWithTritterModel:
         lora_config = LoRAConfig(
             rank=8,
             target_modules=[
-                "q_proj", "k_proj", "v_proj", "o_proj",
-                "gate_proj", "up_proj", "down_proj",
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
             ],
         )
         model = apply_lora(model, lora_config)
@@ -365,7 +370,7 @@ class TestLoRACheckpointing:
         loss.backward()
 
         # Update weights
-        for name, param in model1.named_parameters():
+        for _name, param in model1.named_parameters():
             if param.requires_grad and param.grad is not None:
                 with torch.no_grad():
                     param.add_(param.grad, alpha=-0.01)
@@ -515,7 +520,8 @@ class TestMemoryEstimation:
         model = apply_lora(model, lora_config)
 
         actual_lora_params = sum(
-            p.numel() for name, p in model.named_parameters()
+            p.numel()
+            for name, p in model.named_parameters()
             if "lora_A" in name or "lora_B" in name
         )
 
@@ -566,7 +572,7 @@ class TestLoRACUDA:
         optimizer.step()
 
         # Verify gradients are on correct device
-        for name, param in model.named_parameters():
+        for _name, param in model.named_parameters():
             if param.requires_grad and param.grad is not None:
                 assert param.grad.device.type == "cuda"
 

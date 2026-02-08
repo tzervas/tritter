@@ -62,7 +62,7 @@ class TestINT4KVCacheInit:
         Why: Fresh cache should have no stored values to avoid using
         uninitialized data in attention.
         """
-        for k, v in zip(cache.keys, cache.values):
+        for k, v in zip(cache.keys, cache.values, strict=False):
             assert k is None
             assert v is None
         assert cache.current_len == 0
@@ -250,7 +250,7 @@ class TestKVCacheOperations:
         cache.clear()
 
         assert cache.current_len == 0
-        for k, v in zip(cache.keys, cache.values):
+        for k, v in zip(cache.keys, cache.values, strict=False):
             assert k is None
             assert v is None
 

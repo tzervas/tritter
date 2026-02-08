@@ -23,9 +23,9 @@ class SimpleModel(nn.Module):
     def __init__(self, hidden_size: int = 64, num_layers: int = 2):
         super().__init__()
         self.embedding = nn.Embedding(100, hidden_size)
-        self.layers = nn.ModuleList([
-            nn.Linear(hidden_size, hidden_size) for _ in range(num_layers)
-        ])
+        self.layers = nn.ModuleList(
+            [nn.Linear(hidden_size, hidden_size) for _ in range(num_layers)]
+        )
         self.output = nn.Linear(hidden_size, 100)
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -139,9 +139,7 @@ class TestSafetensorsFormat:
         original_state = simple_model.state_dict()
         for key in original_state:
             assert key in state_dict, f"Missing key: {key}"
-            assert torch.allclose(
-                original_state[key], state_dict[key]
-            ), f"Mismatch in {key}"
+            assert torch.allclose(original_state[key], state_dict[key]), f"Mismatch in {key}"
 
     @pytest.mark.skipif(
         not pytest.importorskip("safetensors", reason="safetensors not installed"),
@@ -168,9 +166,7 @@ class TestSafetensorsFormat:
         )
 
         path = temp_dir / "model.safetensors"
-        save_checkpoint(
-            simple_model, path, format=CheckpointFormat.SAFETENSORS, metadata=meta
-        )
+        save_checkpoint(simple_model, path, format=CheckpointFormat.SAFETENSORS, metadata=meta)
 
         _, loaded_meta = load_checkpoint(path)
 
@@ -223,9 +219,7 @@ class TestPyTorchFormat:
         optimizer.step()
 
         path = temp_dir / "model.pt"
-        save_checkpoint(
-            simple_model, path, format=CheckpointFormat.PYTORCH, optimizer=optimizer
-        )
+        save_checkpoint(simple_model, path, format=CheckpointFormat.PYTORCH, optimizer=optimizer)
 
         # Load and verify optimizer state exists
         checkpoint = torch.load(path, weights_only=False)

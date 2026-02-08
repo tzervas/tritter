@@ -38,10 +38,9 @@ import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -57,13 +56,14 @@ from tritter.models.architecture import TritterModel
 from tritter.tokenization.multimodal import MultiModalTokenizer
 from tritter.training.data import DataConfig, StreamingCodeDataset, create_dataloader
 
-
 # =============================================================================
 # Phase System (matches hybrid-predict-trainer-rs)
 # =============================================================================
 
+
 class Phase(Enum):
     """Training phase - matches Rust enum."""
+
     WARMUP = auto()
     FULL = auto()
     PREDICT = auto()
@@ -72,16 +72,18 @@ class Phase(Enum):
 
 class DivergenceLevel(Enum):
     """Divergence severity levels."""
+
     NONE = auto()
-    MILD = auto()      # Slightly off, monitor
+    MILD = auto()  # Slightly off, monitor
     MODERATE = auto()  # Fall back to FULL
-    SEVERE = auto()    # Emergency stop + recovery
+    SEVERE = auto()  # Emergency stop + recovery
     CRITICAL = auto()  # NaN/Inf detected
 
 
 @dataclass
 class DivergenceSignal:
     """Result of divergence check."""
+
     level: DivergenceLevel
     reason: str
     value: float
@@ -91,6 +93,7 @@ class DivergenceSignal:
 @dataclass
 class DivergenceConfig:
     """Configuration for divergence detection."""
+
     loss_deviation_threshold: float = 3.0  # σ from EMA
     gradient_explosion_factor: float = 10.0
     gradient_vanishing_factor: float = 0.01
@@ -101,6 +104,7 @@ class DivergenceConfig:
 @dataclass
 class PhaseConfig:
     """Configuration matching hybrid-predict-trainer-rs."""
+
     warmup_steps: int = 500
     min_full_steps: int = 20
     max_predict_horizon: int = 30
@@ -113,9 +117,11 @@ class PhaseConfig:
 # Training Statistics (ring buffer like Rust)
 # =============================================================================
 
+
 @dataclass
 class TrainingStatistics:
     """Rolling statistics with ring buffer."""
+
     window_size: int = 100
 
     def __post_init__(self):
@@ -140,7 +146,9 @@ class TrainingStatistics:
             self.loss_ema = alpha * loss + (1 - alpha) * self.loss_ema
             # Variance estimation
             if len(self.losses) > 1:
-                self.loss_variance = sum((l - self.loss_ema)**2 for l in self.losses) / len(self.losses)
+                self.loss_variance = sum(
+                    (loss_val - self.loss_ema) ** 2 for loss_val in self.losses
+                ) / len(self.losses)
 
     @property
     def loss_std(self) -> float:
@@ -155,6 +163,7 @@ class TrainingStatistics:
 # Divergence Monitor (matches Rust implementation)
 # =============================================================================
 
+
 class DivergenceMonitor:
     """Multi-signal divergence detection matching hybrid-predict-trainer-rs."""
 
@@ -167,7 +176,7 @@ class DivergenceMonitor:
         loss: float,
         grad_norm: float,
         stats: TrainingStatistics,
-        predicted_loss: Optional[float] = None,
+        predicted_loss: float | None = None,
     ) -> DivergenceSignal:
         """Check all divergence signals."""
 
@@ -254,6 +263,7 @@ class DivergenceMonitor:
 # Gradient Predictor (RSSM-lite style)
 # =============================================================================
 
+
 class GradientPredictor:
     """Gradient prediction with learned dynamics.
 
@@ -265,10 +275,12 @@ class GradientPredictor:
     def __init__(self, history_size: int = 20):
         self.history_size = history_size
         # Store compressed representations: (norm, mean, std) per layer
-        self.gradient_stats: deque[dict[str, tuple[float, float, float]]] = deque(maxlen=history_size)
+        self.gradient_stats: deque[dict[str, tuple[float, float, float]]] = deque(
+            maxlen=history_size
+        )
         # Store only the last full gradient for prediction (single copy)
-        self.last_gradient: Optional[dict[str, torch.Tensor]] = None
-        self.prev_gradient: Optional[dict[str, torch.Tensor]] = None
+        self.last_gradient: dict[str, torch.Tensor] | None = None
+        self.prev_gradient: dict[str, torch.Tensor] | None = None
         self.confidence: float = 0.0
         self.loss_history: deque[float] = deque(maxlen=history_size)
 
@@ -294,7 +306,9 @@ class GradientPredictor:
                 self.prev_gradient = self.last_gradient
 
             # Store current gradient (single copy)
-            self.last_gradient = {k: v.clone() for k, v in gradients.items() if torch.isfinite(v).all()}
+            self.last_gradient = {
+                k: v.clone() for k, v in gradients.items() if torch.isfinite(v).all()
+            }
 
         if len(self.gradient_stats) >= 5:
             self._update_confidence()
@@ -355,7 +369,7 @@ class GradientPredictor:
         losses = list(self.loss_history)[-5:]
         if len(losses) >= 2:
             # Estimate trend
-            trend = (losses[-1] - losses[-2])
+            trend = losses[-1] - losses[-2]
             predicted = current_loss + trend * horizon * 0.5  # Damped
             return max(0.0, predicted)  # Loss can't be negative
 
@@ -365,6 +379,7 @@ class GradientPredictor:
 # =============================================================================
 # Phase Controller (matches hybrid-predict-trainer-rs)
 # =============================================================================
+
 
 class PhaseController:
     """Phase-based training controller with automatic transitions."""
@@ -392,12 +407,14 @@ class PhaseController:
 
     def transition_to(self, new_phase: Phase, reason: str):
         """Transition to new phase."""
-        self.metrics["phase_transitions"].append({
-            "from": self.phase.name,
-            "to": new_phase.name,
-            "step": self.step,
-            "reason": reason,
-        })
+        self.metrics["phase_transitions"].append(
+            {
+                "from": self.phase.name,
+                "to": new_phase.name,
+                "step": self.step,
+                "reason": reason,
+            }
+        )
         self.phase = new_phase
         self.phase_step = 0
 
@@ -414,10 +431,10 @@ class PhaseController:
         self,
         loss: float,
         grad_norm: float,
-        gradients: Optional[dict[str, torch.Tensor]] = None,
-        predicted_loss: Optional[float] = None,
+        gradients: dict[str, torch.Tensor] | None = None,
+        predicted_loss: float | None = None,
         skipped_due_to_nan: bool = False,
-    ) -> tuple[Phase, Optional[DivergenceSignal]]:
+    ) -> tuple[Phase, DivergenceSignal | None]:
         """Update phase controller after a step."""
         self.step += 1
         self.phase_step += 1
@@ -427,7 +444,7 @@ class PhaseController:
         if skipped_due_to_nan:
             # Don't update stats with bad data
             return self.phase, DivergenceSignal(
-                DivergenceLevel.CRITICAL, "Skipped due to NaN", float('nan'), 0.0
+                DivergenceLevel.CRITICAL, "Skipped due to NaN", float("nan"), 0.0
             )
 
         if gradients is not None:
@@ -444,20 +461,24 @@ class PhaseController:
 
         if signal.level == DivergenceLevel.CRITICAL:
             # Emergency: transition to CORRECT or FULL
-            self.metrics["divergence_events"].append({
-                "step": self.step,
-                "level": signal.level.name,
-                "reason": signal.reason,
-            })
+            self.metrics["divergence_events"].append(
+                {
+                    "step": self.step,
+                    "level": signal.level.name,
+                    "reason": signal.reason,
+                }
+            )
             self.transition_to(Phase.FULL, f"Critical divergence: {signal.reason}")
             return self.phase, signal
 
         if signal.level in (DivergenceLevel.SEVERE, DivergenceLevel.MODERATE):
-            self.metrics["divergence_events"].append({
-                "step": self.step,
-                "level": signal.level.name,
-                "reason": signal.reason,
-            })
+            self.metrics["divergence_events"].append(
+                {
+                    "step": self.step,
+                    "level": signal.level.name,
+                    "reason": signal.reason,
+                }
+            )
             if self.phase == Phase.PREDICT:
                 self.transition_to(Phase.CORRECT, f"Divergence in PREDICT: {signal.reason}")
             return self.phase, signal
@@ -472,8 +493,10 @@ class PhaseController:
                 self.transition_to(Phase.FULL, "Warmup complete")
 
         elif self.phase == Phase.FULL:
-            if (self.phase_step >= self.config.min_full_steps and
-                self.predictor.confidence > self.config.confidence_threshold):
+            if (
+                self.phase_step >= self.config.min_full_steps
+                and self.predictor.confidence > self.config.confidence_threshold
+            ):
                 self.transition_to(Phase.PREDICT, f"Confidence {self.predictor.confidence:.2f}")
 
         elif self.phase == Phase.PREDICT:
@@ -498,9 +521,11 @@ class PhaseController:
 # Hybrid Trainer (main training loop)
 # =============================================================================
 
+
 @dataclass
 class HybridTrainerConfig:
     """Configuration for hybrid trainer."""
+
     model_size: str = "100M"
     data_dir: Path = Path.home() / "data" / "tritter" / "processed"
     output_dir: Path = Path("checkpoints")
@@ -556,7 +581,9 @@ def train_hybrid_rs_compatible(config: HybridTrainerConfig) -> dict[str, Any]:
 
     spec = get_model_spec(config.model_size)
     print(f"Model: {config.model_size} ({spec.total_params_billions():.2f}B params)")
-    print(f"Phase Config: WARMUP={config.phase.warmup_steps}, FULL≥{config.phase.min_full_steps}, PREDICT≤{config.phase.max_predict_horizon}")
+    print(
+        f"Phase Config: WARMUP={config.phase.warmup_steps}, FULL≥{config.phase.min_full_steps}, PREDICT≤{config.phase.max_predict_horizon}"
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -616,7 +643,7 @@ def train_hybrid_rs_compatible(config: HybridTrainerConfig) -> dict[str, Any]:
     max_recoveries = 3
 
     for step in range(1, config.max_steps + 1):
-        step_start = time.time()
+        time.time()
 
         # Get batch
         try:
@@ -636,7 +663,9 @@ def train_hybrid_rs_compatible(config: HybridTrainerConfig) -> dict[str, Any]:
             for layer in model.layers:
                 hidden = layer(hidden)
             logits = model.lm_head(hidden)
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-100)
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-100
+            )
 
         loss_value = loss.item()
 
@@ -645,19 +674,23 @@ def train_hybrid_rs_compatible(config: HybridTrainerConfig) -> dict[str, Any]:
             nan_streak += 1
             print(f"Step {step}: NaN/Inf detected! Loss = {loss_value} (streak: {nan_streak})")
 
-            if nan_streak >= max_nan_streak and last_good_state is not None and recovery_count < max_recoveries:
+            if (
+                nan_streak >= max_nan_streak
+                and last_good_state is not None
+                and recovery_count < max_recoveries
+            ):
                 # RECOVERY: Reload last good state
                 print(f"\n{'=' * 50}")
                 print(f"RECOVERY: Reloading from step {last_good_step}")
                 print(f"{'=' * 50}\n")
 
-                model.load_state_dict(last_good_state['model'])
-                optimizer.load_state_dict(last_good_state['optimizer'])
+                model.load_state_dict(last_good_state["model"])
+                optimizer.load_state_dict(last_good_state["optimizer"])
 
                 # Reduce learning rate for stability
                 new_lr = config.learning_rate * (0.5 ** (recovery_count + 1))
                 for param_group in optimizer.param_groups:
-                    param_group['lr'] = new_lr
+                    param_group["lr"] = new_lr
                 print(f"Reduced learning rate to {new_lr}")
 
                 # Reset phase controller to FULL (conservative)
@@ -676,8 +709,8 @@ def train_hybrid_rs_compatible(config: HybridTrainerConfig) -> dict[str, Any]:
         # Save good state periodically
         if step % 50 == 0 and math.isfinite(loss_value):
             last_good_state = {
-                'model': {k: v.clone() for k, v in model.state_dict().items()},
-                'optimizer': optimizer.state_dict(),
+                "model": {k: v.clone() for k, v in model.state_dict().items()},
+                "optimizer": optimizer.state_dict(),
             }
             last_good_step = step
 
@@ -725,7 +758,9 @@ def train_hybrid_rs_compatible(config: HybridTrainerConfig) -> dict[str, Any]:
             optimizer.zero_grad()
 
             predicted_grads = controller.predictor.predict(controller.predict_horizon)
-            predicted_loss = controller.predictor.predict_loss(loss_value, controller.predict_horizon)
+            predicted_loss = controller.predictor.predict_loss(
+                loss_value, controller.predict_horizon
+            )
 
             # SAFETY: Check if loss is spiking - if so, don't apply predictions
             loss_spike = False
@@ -733,31 +768,37 @@ def train_hybrid_rs_compatible(config: HybridTrainerConfig) -> dict[str, Any]:
                 recent_avg = sum(list(controller.stats.losses)[-3:]) / 3
                 if loss_value > recent_avg * 1.5:  # 50% spike
                     loss_spike = True
-                    print(f"Step {step}: Loss spike detected ({loss_value:.2f} vs avg {recent_avg:.2f}), skipping prediction")
+                    print(
+                        f"Step {step}: Loss spike detected ({loss_value:.2f} vs avg {recent_avg:.2f}), skipping prediction"
+                    )
 
             if predicted_grads and not loss_spike:
                 # Validate predictions - don't apply if they're too large
                 max_grad_norm = 0.0
-                for name, grad in predicted_grads.items():
+                for _name, grad in predicted_grads.items():
                     gnorm = grad.norm().item()
                     if gnorm > max_grad_norm:
                         max_grad_norm = gnorm
 
                 # Use historical baseline
-                baseline_norm = controller.stats.grad_norm_baseline if controller.stats.is_ready else 1.0
+                baseline_norm = (
+                    controller.stats.grad_norm_baseline if controller.stats.is_ready else 1.0
+                )
 
                 if max_grad_norm < baseline_norm * 5:  # Within 5x of baseline
                     apply_gradients(model, predicted_grads)
                     # Use REDUCED learning rate for predictions
                     for param_group in optimizer.param_groups:
-                        param_group['lr'] = config.learning_rate * 0.5
+                        param_group["lr"] = config.learning_rate * 0.5
                     grad_norm = compute_grad_norm(model)
                     optimizer.step()
                     # Restore learning rate
                     for param_group in optimizer.param_groups:
-                        param_group['lr'] = config.learning_rate
+                        param_group["lr"] = config.learning_rate
                 else:
-                    print(f"Step {step}: Predicted gradient too large ({max_grad_norm:.2f} vs baseline {baseline_norm:.2f}), skipping")
+                    print(
+                        f"Step {step}: Predicted gradient too large ({max_grad_norm:.2f} vs baseline {baseline_norm:.2f}), skipping"
+                    )
                     grad_norm = 0.0
                     # Force transition back to FULL
                     controller.transition_to(Phase.FULL, "Predicted gradient too large")
@@ -768,7 +809,7 @@ def train_hybrid_rs_compatible(config: HybridTrainerConfig) -> dict[str, Any]:
                     controller.transition_to(Phase.FULL, "Loss spike in PREDICT")
 
         # Update controller
-        skipped = (controller.should_use_full_gradient() and gradients is None)
+        skipped = controller.should_use_full_gradient() and gradients is None
         phase, signal = controller.update(loss_value, grad_norm, gradients, predicted_loss, skipped)
 
         total_tokens += tokens_per_step
@@ -779,7 +820,11 @@ def train_hybrid_rs_compatible(config: HybridTrainerConfig) -> dict[str, Any]:
         if step % config.log_every == 0:
             elapsed = time.time() - start_time
             tokens_per_sec = total_tokens / elapsed
-            backward_pct = (1 - controller.metrics["backward_passes"] / max(controller.metrics["forward_passes"], 1)) * 100
+            backward_pct = (
+                1
+                - controller.metrics["backward_passes"]
+                / max(controller.metrics["forward_passes"], 1)
+            ) * 100
 
             status = f"Step {step:>5} | Phase: {phase.name:<8} | Loss: {loss_value:.4f} | Tok/s: {tokens_per_sec:,.0f} | Skip%: {backward_pct:.1f}%"
 
@@ -815,10 +860,13 @@ def train_hybrid_rs_compatible(config: HybridTrainerConfig) -> dict[str, Any]:
         "total_tokens": total_tokens,
         "total_time_seconds": total_time,
         "final_loss": loss_history[-1][1] if loss_history else 0,
-        "min_loss": min(l[1] for l in loss_history) if loss_history else 0,
+        "min_loss": min(entry[1] for entry in loss_history) if loss_history else 0,
         "backward_passes": controller.metrics["backward_passes"],
         "forward_passes": controller.metrics["forward_passes"],
-        "backward_reduction_percent": (1 - controller.metrics["backward_passes"] / max(controller.metrics["forward_passes"], 1)) * 100,
+        "backward_reduction_percent": (
+            1 - controller.metrics["backward_passes"] / max(controller.metrics["forward_passes"], 1)
+        )
+        * 100,
         "predictions_used": controller.metrics["predictions_used"],
         "corrections_applied": controller.metrics["corrections_applied"],
         "divergence_events": len(controller.metrics["divergence_events"]),
@@ -862,7 +910,9 @@ def main():
     parser = argparse.ArgumentParser(description="Hybrid Predictive Training (RS-Compatible)")
 
     parser.add_argument("--model", type=str, default="100M", choices=["100M", "500M", "1B"])
-    parser.add_argument("--data-dir", type=Path, default=Path.home() / "data" / "tritter" / "processed")
+    parser.add_argument(
+        "--data-dir", type=Path, default=Path.home() / "data" / "tritter" / "processed"
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints"))
     parser.add_argument("--max-steps", type=int, default=5000)
     parser.add_argument("--warmup-steps", type=int, default=500)
@@ -905,9 +955,13 @@ def main():
             print("-" * 60)
 
             if "final_loss" in compare_metrics:
-                print(f"{'Final Loss':<30} {metrics['final_loss']:<15.4f} {compare_metrics['final_loss']:<15.4f}")
+                print(
+                    f"{'Final Loss':<30} {metrics['final_loss']:<15.4f} {compare_metrics['final_loss']:<15.4f}"
+                )
             if "min_loss" in compare_metrics:
-                print(f"{'Min Loss':<30} {metrics['min_loss']:<15.4f} {compare_metrics['min_loss']:<15.4f}")
+                print(
+                    f"{'Min Loss':<30} {metrics['min_loss']:<15.4f} {compare_metrics['min_loss']:<15.4f}"
+                )
         else:
             print(f"No metrics.json found at {compare_metrics_path}")
 

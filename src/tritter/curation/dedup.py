@@ -31,8 +31,8 @@ try:
     DATASKETCH_AVAILABLE = True
 except ImportError:
     DATASKETCH_AVAILABLE = False
-    DatasketchMinHash = None  # type: ignore
-    MinHashLSH = None  # type: ignore
+    DatasketchMinHash = None
+    MinHashLSH = None
 
 __all__ = [
     "MinHashSignature",

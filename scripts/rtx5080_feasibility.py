@@ -298,7 +298,9 @@ def print_feasibility_matrix() -> None:
     # Inference feasibility
     print("INFERENCE (Packed Ternary + INT4 KV-cache)")
     print("-" * 100)
-    print(f"{'Model':<6} {'4K':>8} {'8K':>8} {'16K':>8} {'32K':>8} {'64K':>8} {'128K':>8} {'Streaming?':<12}")
+    print(
+        f"{'Model':<6} {'4K':>8} {'8K':>8} {'16K':>8} {'32K':>8} {'64K':>8} {'128K':>8} {'Streaming?':<12}"
+    )
     print("-" * 100)
 
     for size in MODEL_SPECS.keys():
@@ -322,7 +324,9 @@ def print_feasibility_matrix() -> None:
                 else:
                     row += f" {'✗':>7}"
 
-        streaming_note = "Required" if needs_streaming else "Optional" if size in ["7B", "10B", "13B"] else "No"
+        streaming_note = (
+            "Required" if needs_streaming else "Optional" if size in ["7B", "10B", "13B"] else "No"
+        )
         row += f" {streaming_note:<12}"
         print(row)
 
@@ -341,7 +345,9 @@ def print_feasibility_matrix() -> None:
         fits_str = "✓" if r.fits else "✗"
         ctx_str = f"{r.context_length}"
         notes_str = ", ".join(r.notes[:2]) if r.notes else ""
-        print(f"{size:<6} {fits_str:>6} {format_gb(r.memory_used_gb):>10} {ctx_str:>8} {notes_str:<30}")
+        print(
+            f"{size:<6} {fits_str:>6} {format_gb(r.memory_used_gb):>10} {ctx_str:>8} {notes_str:<30}"
+        )
 
     print("-" * 70)
     print()
@@ -349,7 +355,9 @@ def print_feasibility_matrix() -> None:
     # LoRA/QLoRA training feasibility
     print("\nLoRA/QLoRA TRAINING (Packed Base + LoRA Adapters)")
     print("-" * 90)
-    print(f"{'Model':<6} {'r=8':>8} {'r=16':>8} {'r=32':>8} {'r=64':>8} {'Memory (r=16)':>14} {'Notes':<20}")
+    print(
+        f"{'Model':<6} {'r=8':>8} {'r=16':>8} {'r=32':>8} {'r=64':>8} {'Memory (r=16)':>14} {'Notes':<20}"
+    )
     print("-" * 90)
 
     for size in MODEL_SPECS.keys():
@@ -392,26 +400,30 @@ def print_model_analysis(model_size: str) -> None:
     if spec.uses_gqa:
         print(f"GQA: {spec.num_heads}:{spec.effective_num_kv_heads} ratio")
 
-    print(f"\nWeight Storage:")
+    print("\nWeight Storage:")
     print(f"  FP32:    {format_gb(mem.weights_fp32 / 1024**3)}")
     print(f"  FP16:    {format_gb(mem.weights_fp16 / 1024**3)}")
     print(f"  Packed:  {format_gb(mem.weights_packed_ternary / 1024**3)}")
 
-    print(f"\n--- INFERENCE ANALYSIS ---")
+    print("\n--- INFERENCE ANALYSIS ---")
     results = analyze_inference_feasibility(model_size, use_streaming=False)
     streaming_results = analyze_inference_feasibility(model_size, use_streaming=True)
 
-    print(f"\nWithout Layer Streaming:")
+    print("\nWithout Layer Streaming:")
     for r in results:
         status = "✓ FITS" if r.fits else "✗ NO"
-        print(f"  {r.context_length // 1024}K context: {status} ({format_gb(r.memory_used_gb)} used)")
+        print(
+            f"  {r.context_length // 1024}K context: {status} ({format_gb(r.memory_used_gb)} used)"
+        )
 
-    print(f"\nWith Layer Streaming:")
+    print("\nWith Layer Streaming:")
     for r in streaming_results:
         status = "✓ FITS" if r.fits else "✗ NO"
-        print(f"  {r.context_length // 1024}K context: {status} ({format_gb(r.memory_used_gb)} used)")
+        print(
+            f"  {r.context_length // 1024}K context: {status} ({format_gb(r.memory_used_gb)} used)"
+        )
 
-    print(f"\n--- TRAINING ANALYSIS ---")
+    print("\n--- TRAINING ANALYSIS ---")
     train_r = analyze_training_feasibility(model_size)
     status = "✓ FEASIBLE" if train_r.fits else "✗ NOT FEASIBLE"
     print(f"Status: {status}")
@@ -426,11 +438,13 @@ def print_model_analysis(model_size: str) -> None:
         print("  - Use multi-GPU setup")
 
     # LoRA training analysis
-    print(f"\n--- LoRA/QLoRA TRAINING ANALYSIS ---")
+    print("\n--- LoRA/QLoRA TRAINING ANALYSIS ---")
     for rank in [8, 16, 32, 64]:
         lora_r = analyze_lora_training_feasibility(model_size, lora_rank=rank)
         status = "✓ FITS" if lora_r.fits else "✗ NO"
-        print(f"  Rank {rank:>2}: {status} ({format_gb(lora_r.memory_used_gb)} used, ctx {lora_r.context_length})")
+        print(
+            f"  Rank {rank:>2}: {status} ({format_gb(lora_r.memory_used_gb)} used, ctx {lora_r.context_length})"
+        )
 
     # Recommendation
     print("\n--- RECOMMENDATION ---")
@@ -445,7 +459,7 @@ def print_model_analysis(model_size: str) -> None:
             lora_r = analyze_lora_training_feasibility(model_size, lora_rank=rank)
             if lora_r.fits:
                 print(f"  QLoRA with rank={rank} is recommended for {model_size}")
-                print(f"  (Lower rank due to memory constraints)")
+                print("  (Lower rank due to memory constraints)")
                 break
         else:
             print(f"  {model_size} requires multi-GPU for training even with QLoRA")
@@ -532,11 +546,11 @@ def print_test_plan() -> None:
     if easy_inference:
         first_model = easy_inference[0][0]
         print(f"# 1. Quick validation with {first_model}")
-        print(f"python -c \"")
-        print(f"from tritter.core import TritterConfig")
+        print('python -c "')
+        print("from tritter.core import TritterConfig")
         print(f"config = TritterConfig(model_size='{first_model}')")
-        print(f"print(f'{{config.model_size}}: {{config.hidden_size}}h x {{config.num_layers}}L')")
-        print(f"\"")
+        print("print(f'{config.model_size}: {config.hidden_size}h x {config.num_layers}L')")
+        print('"')
         print()
 
     print("# 2. Run inference benchmark")

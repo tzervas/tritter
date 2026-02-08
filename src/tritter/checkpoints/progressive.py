@@ -255,7 +255,7 @@ def load_progressive(
 
 def expand_model(
     source_checkpoint: str | Path,
-    target_config,  # TritterConfig
+    target_config: Any,  # TritterConfig
     method: str = "depth_upscaling",
     output_path: str | Path | None = None,
 ) -> tuple[dict[str, torch.Tensor], ProgressiveMetadata]:
@@ -312,13 +312,13 @@ def expand_model(
     # Save if requested
     if output_path:
         # Create a temporary module to save
-        class StateHolder(nn.Module):
-            def __init__(self, state: dict[str, torch.Tensor]):
+        class StateHolder(nn.Module):  # type: ignore[misc]
+            def __init__(self, state: dict[str, torch.Tensor]) -> None:
                 super().__init__()
                 for name, param in state.items():
                     self.register_buffer(name.replace(".", "_"), param)
 
-            def state_dict(self, *args, **kwargs):
+            def state_dict(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
                 return {
                     name.replace("_", "."): buf
                     for name, buf in self.named_buffers()
@@ -333,7 +333,7 @@ def expand_model(
 def _depth_upscale(
     state: dict[str, torch.Tensor],
     source_meta: ProgressiveMetadata,
-    target_config,
+    target_config: Any,
 ) -> dict[str, torch.Tensor]:
     """Expand model by duplicating layers.
 
@@ -399,7 +399,7 @@ def _depth_upscale(
 def _width_upscale(
     state: dict[str, torch.Tensor],
     source_meta: ProgressiveMetadata,
-    target_config,
+    target_config: Any,
 ) -> dict[str, torch.Tensor]:
     """Expand model by increasing hidden dimension.
 
@@ -472,7 +472,7 @@ def _width_upscale(
 
 def compute_fisher_diagonal(
     model: nn.Module,
-    dataloader,
+    dataloader: Any,
     num_samples: int = 1000,
 ) -> dict[str, torch.Tensor]:
     """Compute Fisher Information diagonal for EWC.

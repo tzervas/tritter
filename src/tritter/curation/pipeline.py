@@ -254,12 +254,12 @@ class CurationPipeline:
 
             # Penalize quality score based on security severity
             adjusted_score = quality_metrics.overall_score
-            for issue in security_issues:
-                if issue.severity == "critical":
+            for sec_issue in security_issues:
+                if sec_issue.severity == "critical":
                     adjusted_score *= 0.3
-                elif issue.severity == "high":
+                elif sec_issue.severity == "high":
                     adjusted_score *= 0.5
-                elif issue.severity == "medium":
+                elif sec_issue.severity == "medium":
                     adjusted_score *= 0.7
 
             return CurationResult(
@@ -428,11 +428,11 @@ class CurationPipeline:
             )
 
         # Convert security issues to dicts
-        security_dicts = [
+        security_dicts: list[dict[str, str]] = [
             {
                 "type": issue.issue_type,
                 "severity": issue.severity,
-                "line": issue.line,
+                "line": str(issue.line),
                 "message": issue.message,
                 "recommendation": issue.recommendation,
             }
