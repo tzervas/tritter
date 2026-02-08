@@ -31,7 +31,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     exit 1
 fi
 
-# Detect strictness level
+# Detect strictness level (supports STRICTNESS_OVERRIDE env var for local parity with remote)
 if [[ -f "$SCRIPT_DIR/detect-branch-strictness.sh" ]]; then
     eval "$(bash "$SCRIPT_DIR/detect-branch-strictness.sh")"
 else

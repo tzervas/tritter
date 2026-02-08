@@ -156,11 +156,11 @@ get_check_config() {
         in_strictness && $0 ~ "^  " level_key ":" { in_level=1; next }
         in_level && $0 ~ "^    " check ":" {
             sub(/.*: /, "");
-            gsub(/"/, "");
-            gsub(/'\''/, "");
             gsub(/#.*/, "");  # Remove comments
             gsub(/^[[:space:]]+/, "");  # Trim leading whitespace
             gsub(/[[:space:]]+$/, "");  # Trim trailing whitespace
+            if (substr($0, 1, 1) == "'\''") { sub(/^'\''/, ""); sub(/'\''$/, ""); }
+            else if (substr($0, 1, 1) == "\"") { sub(/^"/, ""); sub(/"$/, ""); }
             print;
             exit
         }
@@ -189,7 +189,12 @@ main() {
     branch=$(get_branch)
 
     local level
-    level=$(get_strictness_level "$branch")
+    # Support STRICTNESS_OVERRIDE env var for local parity with remote workflow_dispatch input
+    if [[ -n "${STRICTNESS_OVERRIDE:-}" ]]; then
+        level="$STRICTNESS_OVERRIDE"
+    else
+        level=$(get_strictness_level "$branch")
+    fi
 
     local level_name
     level_name=$(get_level_name "$level")

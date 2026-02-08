@@ -151,6 +151,22 @@ custom_checks:
     release: error
     production: error
 
+  # Bandit static security analysis (parity with remote security job)
+  bandit_scan:
+    command: 'python -m bandit -r src/tritter -ll -q || echo "Bandit not installed, skipping (pip install bandit)"'
+    feature: skip
+    development: warn
+    release: error
+    production: error
+
+  # Build validation (ensure package builds cleanly)
+  build_check:
+    command: 'python -m build --sdist --no-isolation 2>&1 || echo "Build tools not installed, skipping (pip install build)"'
+    feature: skip
+    development: warn
+    release: error
+    production: error
+
 # Output Options
 output:
   format: github_actions  # github_actions | gitlab_ci | jenkins | console

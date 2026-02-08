@@ -2,6 +2,18 @@
 # Local Quality Checks - Exact CI Parity
 # Run this before pushing to verify all checks pass
 # This is the SAME script that CI uses, ensuring 100% parity
+#
+# Usage:
+#   bash scripts/run-checks-local.sh              # Auto-detect strictness from branch
+#   STRICTNESS_OVERRIDE=0 bash scripts/run-checks-local.sh  # Force FEATURE level
+#   STRICTNESS_OVERRIDE=2 bash scripts/run-checks-local.sh  # Force RELEASE level
+#   STRICTNESS_OVERRIDE=3 bash scripts/run-checks-local.sh  # Force PRODUCTION level
+#
+# Strictness levels:
+#   0 = FEATURE     (warnings only, 50% coverage)
+#   1 = DEVELOPMENT (must format, 70% coverage)
+#   2 = RELEASE     (strict linting, 80% coverage)
+#   3 = PRODUCTION  (zero tolerance, 85% coverage)
 
 set -euo pipefail
 
@@ -9,6 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Colors
+RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
@@ -19,7 +32,7 @@ NC='\033[0m'
 echo -e "${BOLD}${BLUE}╔═══════════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}${BLUE}║  Tritter Local Quality Checks                        ║${NC}"
 echo -e "${BOLD}${BLUE}║  (Exact parity with GitHub Actions CI)               ║${NC}"
-echo -e "${BOLD}${BLUE}╔═══════════════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}${BLUE}╚═══════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # Check if we're in project root
@@ -53,6 +66,11 @@ else
     echo -e "  Tritter: ${GREEN}Installed${NC}"
 fi
 
+# Show override if set
+if [[ -n "${STRICTNESS_OVERRIDE:-}" ]]; then
+    echo -e "  Override: ${YELLOW}Level ${STRICTNESS_OVERRIDE}${NC}"
+fi
+
 echo ""
 echo -e "${BOLD}${CYAN}Running CI checks (this is EXACTLY what GitHub Actions runs)...${NC}"
 echo ""
@@ -69,15 +87,15 @@ fi
 echo ""
 echo -e "${BOLD}${BLUE}╔═══════════════════════════════════════════════════════╗${NC}"
 if [[ $EXIT_CODE -eq 0 ]]; then
-    echo -e "${BOLD}${GREEN}✅ Local checks passed!${NC}"
+    echo -e "${BOLD}${GREEN}  ✅ Local checks passed!${NC}"
     echo -e ""
-    echo -e "Safe to push. CI (when manually triggered) will produce"
-    echo -e "identical results since it uses the same script."
+    echo -e "  Safe to push. CI (when manually triggered) will produce"
+    echo -e "  identical results since it uses the same script."
 else
-    echo -e "${BOLD}${YELLOW}⚠️  Some checks failed or warned${NC}"
+    echo -e "${BOLD}${YELLOW}  ⚠️  Some checks failed or warned${NC}"
     echo -e ""
-    echo -e "Fix issues before pushing to avoid CI failures."
-    echo -e "Note: Warnings are OK on feature branches."
+    echo -e "  Fix issues before pushing to avoid CI failures."
+    echo -e "  Note: Warnings are OK on feature branches."
 fi
 echo -e "${BOLD}${BLUE}╚═══════════════════════════════════════════════════════╝${NC}"
 
